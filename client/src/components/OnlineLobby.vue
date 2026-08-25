@@ -233,9 +233,9 @@ const submitJoin = () => {
   margin: 0;
   padding: 0.55rem 0.7rem;
   font-size: 0.82rem;
-  color: #fca5a5;
-  background: rgb(239 68 68 / 0.1);
-  border: 1px solid rgb(239 68 68 / 0.28);
+  color: var(--danger-text);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
   border-radius: 0.5rem;
 }
 

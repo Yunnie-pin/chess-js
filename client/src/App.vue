@@ -4,19 +4,22 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
 import GameControls from './components/GameControls.vue'
+import MariHalo from './components/MariHalo.vue'
+import MariPortrait from './components/MariPortrait.vue'
 import MoveHistory from './components/MoveHistory.vue'
 import OnlineLobby from './components/OnlineLobby.vue'
 import PromotionDialog from './components/PromotionDialog.vue'
 import RoomPanel from './components/RoomPanel.vue'
 import { useChessGame } from './composables/useChessGame.ts'
 import { useOnlineGame } from './composables/useOnlineGame.ts'
+import { resolveServerUrl } from './net/serverUrl.ts'
 import { opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
 
 type AppMode = 'offline' | 'online'
 
 const offline = useChessGame()
-const online = useOnlineGame(__SERVER_URL__)
+const online = useOnlineGame(resolveServerUrl())
 
 const appMode = ref<AppMode>('offline')
 const orientation = ref<Color>('w')
@@ -225,10 +228,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="app">
+    <MariPortrait />
+
     <header class="app__header">
-      <div>
-        <h1 class="app__title">Catur</h1>
-        <p class="app__subtitle">Vue 3 · TypeScript · aturan lengkap FIDE</p>
+      <div class="brand">
+        <MariHalo />
+        <div>
+          <h1 class="app__title">Chess with Mari</h1>
+          <p class="app__subtitle">Vue 3 · TypeScript · aturan lengkap FIDE</p>
+        </div>
       </div>
       <nav class="modes">
         <button
@@ -369,6 +377,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   max-width: 68rem;
   margin: 0 auto;
   padding: 1.5rem 1.25rem 3rem;
+  /* Naikkan di atas potret latar yang ber-position: fixed. */
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
 }
 
 .app__header {
@@ -383,6 +400,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   margin: 0;
   font-size: 1.6rem;
   letter-spacing: -0.01em;
+  /* Emas trim jubahnya meluruh ke oranye rambutnya. */
+  background: linear-gradient(100deg, var(--accent-hover) 0%, var(--orange) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  width: fit-content;
 }
 
 .app__subtitle {
@@ -511,17 +534,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 .status--check {
   border-left-color: var(--danger);
-  color: #fca5a5;
+  color: var(--danger-text);
 }
 
 .status--win {
-  border-left-color: var(--success);
-  color: #86efac;
+  border-left-color: var(--accent);
+  color: var(--gold-text);
 }
 
 .status--draw {
-  border-left-color: var(--warning);
-  color: #fcd34d;
+  border-left-color: var(--sky);
+  color: var(--sky-text);
 }
 
 .status__spinner {
@@ -544,9 +567,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   margin: 0;
   padding: 0.55rem 0.7rem;
   font-size: 0.82rem;
-  color: #fca5a5;
-  background: rgb(239 68 68 / 0.1);
-  border: 1px solid rgb(239 68 68 / 0.28);
+  color: var(--danger-text);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
   border-radius: 0.5rem;
 }
 

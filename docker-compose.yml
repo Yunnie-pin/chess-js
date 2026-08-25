@@ -1,0 +1,49 @@
+# Menjalankan seluruh aplikasi:
+#
+#   docker compose up --build      lalu buka http://localhost:8080
+#
+# Klien disajikan nginx, yang sekaligus meneruskan /ws ke server catur di
+# jaringan internal compose. Jadi hanya satu port yang perlu dibuka ke luar, dan
+# alamat server tidak perlu dibakar ke dalam bundel klien.
+
+services:
+  server:
+    build:
+      # Konteksnya akar repo, bukan server/ — keduanya memakai paket workspace
+      # @chess/shared.
+      context: .
+      dockerfile: server/Dockerfile
+    image: chess-with-mari/server:local
+    environment:
+      PORT: 8787
+      HOST: 0.0.0.0
+    restart: unless-stopped
+    # Sengaja tidak menerbitkan port ke host: satu-satunya jalan masuk adalah
+    # lewat nginx. Untuk memeriksa /health langsung, buka komentar di bawah.
+    # ports:
+    #   - '8787:8787'
+    networks: [chess]
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+      args:
+        # Kosong = klien menyambung ke /ws pada origin yang sama. Isi hanya bila
+        # server catur dijalankan di host yang berbeda dari kliennya.
+        VITE_SERVER_URL: ${VITE_SERVER_URL-}
+    image: chess-with-mari/client:local
+    ports:
+      - '${CLIENT_PORT:-8080}:80'
+    depends_on:
+      server:
+        # Menunggu HEALTHCHECK server benar-benar hijau, bukan sekadar
+        # kontainernya sudah dijalankan — kalau tidak, permintaan /ws pertama
+        # bisa mengenai server yang belum siap.
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [chess]
+
+networks:
+  chess:
+    driver: bridge

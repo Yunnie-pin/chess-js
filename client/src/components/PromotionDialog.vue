@@ -55,7 +55,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   z-index: 50;
   display: grid;
   place-items: center;
-  background: rgb(8 10 14 / 0.72);
+  background: var(--overlay);
   backdrop-filter: blur(3px);
   padding: 1rem;
 }

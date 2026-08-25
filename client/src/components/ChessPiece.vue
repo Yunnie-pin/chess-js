@@ -55,14 +55,14 @@ const label = computed(() => `${NAMES[type.value]} ${color.value === 'w' ? 'Puti
 }
 
 .piece--w {
-  color: #fbfbf8;
-  -webkit-text-stroke: 1.6px #2b3038;
+  color: var(--piece-light);
+  -webkit-text-stroke: 1.6px var(--piece-light-stroke);
   text-shadow: 0 2px 3px rgb(0 0 0 / 0.35);
 }
 
 .piece--b {
-  color: #2a2e36;
-  -webkit-text-stroke: 1.1px #14171c;
+  color: var(--piece-dark);
+  -webkit-text-stroke: 1.1px var(--piece-dark-stroke);
   text-shadow: 0 2px 3px rgb(0 0 0 / 0.3);
 }
 </style>

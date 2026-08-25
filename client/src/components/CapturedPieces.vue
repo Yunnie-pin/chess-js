@@ -42,12 +42,12 @@ const captured = computed<Piece[]>(() => props.pieces.map((type) => `${props.col
 }
 
 .captured__piece--w {
-  color: #e8e9ec;
-  -webkit-text-stroke: 0.8px #2b3038;
+  color: var(--piece-light-small);
+  -webkit-text-stroke: 0.8px var(--piece-light-stroke);
 }
 
 .captured__piece--b {
-  color: #3d434d;
+  color: var(--piece-dark-small);
 }
 
 .captured__lead {

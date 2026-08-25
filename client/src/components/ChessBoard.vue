@@ -252,7 +252,7 @@ const dragStyle = computed(() => {
 }
 
 .square--check::before {
-  background: radial-gradient(circle, var(--danger) 0%, rgb(220 38 38 / 0) 72%);
+  background: radial-gradient(circle, var(--danger) 0%, var(--danger-fade) 72%);
 }
 
 .hint {
@@ -264,13 +264,13 @@ const dragStyle = computed(() => {
   width: 30%;
   height: 30%;
   border-radius: 50%;
-  background: rgb(20 24 30 / 0.32);
+  background: var(--hint);
 }
 
 .hint--capture {
   inset: 6%;
   border-radius: 50%;
-  border: 6px solid rgb(20 24 30 / 0.3);
+  border: 6px solid var(--hint);
 }
 
 .coord {

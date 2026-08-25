@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  # Berjalan pada commit yang sudah masuk main — termasuk hasil merge PR, karena
+  # merge menghasilkan push ke main.
+  push:
+    branches: [main]
+  # Dan sebelum merge, pada setiap PR yang menargetkan main.
+  pull_request:
+    branches: [main]
+  # Dipanggil ulang oleh release.yml, supaya langkah verifikasinya hanya
+  # didefinisikan sekali dan tidak pernah menyimpang dari yang dipakai di PR.
+  workflow_call:
+
+# Push beruntun ke branch yang sama tidak perlu diverifikasi semuanya; batalkan
+# yang lama. Kecuali di main — riwayat hasil setiap commit di sana tetap berguna.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Node 24 menjalankan TypeScript langsung lewat type stripping — versi
+          # ini bukan pilihan bebas, kode server memang mengandalkannya.
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck (ketat, termasuk template Vue)
+        run: npm run typecheck
+
+      - name: Tes
+        # Tes server dan client menyalakan proses server sungguhan lalu bicara
+        # lewat WebSocket asli di localhost.
+        run: npm test
+
+      - name: Build klien
+        run: npm run build

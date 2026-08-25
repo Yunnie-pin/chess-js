@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+**/test
+*.md
+**/*.md
+.gitignore
+.gitattributes
+docker-compose.yml
+**/Dockerfile
+.dockerignore

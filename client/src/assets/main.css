@@ -40,6 +40,8 @@
   --danger-text: #f2a893;
   --danger-soft: rgb(226 96 74 / 0.12);
   --danger-line: rgb(226 96 74 / 0.3);
+  /* Ujung transparan untuk gradasi sorotan skak — harus hue yang sama. */
+  --danger-fade: rgb(226 96 74 / 0);
 
   --gold-text: #f0d492;
   --sky: var(--mari-sky);
@@ -49,13 +51,20 @@
 
   --orange: var(--mari-orange);
 
-  /* --- Papan: jubah putih lawan skapulir hitam --- */
-  --square-light: #efe5d1;
-  --square-dark: #4d4133;
-  /* Sorotan langkah terakhir memakai emas; petak terpilih memakai biru matanya. */
-  --highlight-last: rgb(221 182 92 / 0.45);
-  --highlight-selected: rgb(119 192 232 / 0.34);
+  /* --- Papan: jubah gading lawan emas trim ---
+     Hitam skapulirnya sengaja TIDAK dipakai di sini. Petak gelap harus cukup
+     terang agar bidak hitam tetap terbaca di atasnya — papan hijau standar
+     memberi rasio sekitar 4,3:1, dan emas tua ini menyamainya. Warna hitamnya
+     tetap hadir, tapi sebagai latar antarmuka. */
+  --square-light: #f2e9d7;
+  --square-dark: #9d8557;
+  /* Emas tidak dipakai untuk sorotan karena akan hilang di atas petak emas.
+     Oranye rambutnya justru menonjol di kedua warna petak. */
+  --highlight-last: rgb(232 133 63 / 0.5);
+  --highlight-selected: rgb(119 192 232 / 0.42);
   --hint: rgb(26 22 17 / 0.34);
+  /* Tirai gelap hangat di belakang dialog. */
+  --overlay: rgb(12 9 5 / 0.74);
 
   /* --- Bidak --- */
   --piece-light: #fbf7ee;

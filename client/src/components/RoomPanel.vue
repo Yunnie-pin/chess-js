@@ -136,9 +136,9 @@ const describe = (player: PlayerView): string =>
   margin: 0;
   padding: 0.5rem 0.7rem;
   font-size: 0.82rem;
-  color: #fcd34d;
-  background: rgb(245 158 11 / 0.1);
-  border: 1px solid rgb(245 158 11 / 0.25);
+  color: var(--sky-text);
+  background: var(--sky-soft);
+  border: 1px solid var(--sky-line);
   border-radius: 0.5rem;
 }
 
@@ -210,11 +210,11 @@ const describe = (player: PlayerView): string =>
 }
 
 .conn--tersambung .conn__dot {
-  background: var(--success);
+  background: var(--sky);
 }
 
 .conn--menyambung .conn__dot {
-  background: var(--warning);
+  background: var(--orange);
 }
 
 .conn--gagal .conn__dot,
