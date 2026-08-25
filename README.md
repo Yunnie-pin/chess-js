@@ -25,7 +25,7 @@ For local play only (vs computer / two players) you don't need the server —
 | `npm run dev`        | Server + client together                  |
 | `npm run dev:server` | Multiplayer server only                   |
 | `npm run dev:client` | UI only                                   |
-| `npm test`           | 91 tests across the three workspaces      |
+| `npm test`           | 92 tests across the three workspaces      |
 | `npm run typecheck`  | Strict TypeScript, Vue templates included |
 | `npm run build`      | Build the client into `client/dist/`      |
 | `npm start`          | Run the server for production             |
@@ -255,7 +255,7 @@ the client falls back to a synchronous path automatically.
 ## Testing
 
 ```
-shared/   38 tests   perft, SAN, draws, Zobrist hash consistency, the Elo ladder
+shared/   39 tests   perft, SAN, draws, Zobrist hash consistency, the Elo ladder
 server/   28 tests   room rules, seats, tokens; plus real WebSocket integration
 client/   25 tests   local game state, and end-to-end against a real server
 ```

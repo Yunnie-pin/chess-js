@@ -411,6 +411,24 @@ class Searcher {
 }
 
 /**
+ * Sumber angka acak untuk pemilihan langkah per level.
+ *
+ * Bisa diganti supaya perilaku AI dapat diulang persis. Tes memakainya agar
+ * pengukuran kekuatan tidak bergantung pada keberuntungan — pengukuran statistik
+ * dengan sampel kecil pernah membuat CI gagal secara acak. Berguna juga saat
+ * menelusuri partai yang hasilnya aneh.
+ */
+let randomSource: () => number = Math.random
+
+export function setRandomSource(source: () => number): void {
+  randomSource = source
+}
+
+export function resetRandomSource(): void {
+  randomSource = Math.random
+}
+
+/**
  * Memilih langkah dari daftar akar sesuai kekuatan yang diminta.
  *
  * Level rendah TIDAK dibuat lemah dengan mencari lebih dangkal saja. Mesin
@@ -423,8 +441,8 @@ function pickByStrength(rootMoves: RootMove[], profile: StrengthProfile): Move |
 
   // Sesekali benar-benar meleset, tanpa memandang skor. Ini yang membuat level
   // pemula bisa dikalahkan pemain baru.
-  if (profile.blunderChance > 0 && Math.random() < profile.blunderChance) {
-    return rootMoves[Math.floor(Math.random() * rootMoves.length)].move
+  if (profile.blunderChance > 0 && randomSource() < profile.blunderChance) {
+    return rootMoves[Math.floor(randomSource() * rootMoves.length)].move
   }
   if (profile.errorMargin <= 0) return rootMoves[0].move
 

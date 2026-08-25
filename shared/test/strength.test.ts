@@ -7,9 +7,11 @@ import {
   ELO_LEVELS,
   STRENGTH_PROFILES,
   analyseRootMoves,
-  chooseMove
+  chooseMove,
+  resetRandomSource,
+  setRandomSource
 } from '../src/ai.ts'
-import type { EloRating } from '../src/ai.ts'
+
 
 test('setiap level punya profil, dan makin tinggi Elo makin tidak toleran salah', () => {
   let previousMargin = Infinity
@@ -100,56 +102,100 @@ test('level maksimal selalu memilih langkah terbaik menurut pencariannya', () =>
 
 const OPEN_POSITION = 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'
 
-/** Pembanding tetap kedalaman 4, dipakai untuk menilai langkah SEMUA level. */
-const REFERENCE = analyseRootMoves(new Position(OPEN_POSITION), 4)
+/*
+ * CATATAN soal apa yang TIDAK diuji di sini.
+ *
+ * Tangga kekuatan antar level pernah diuji dengan mengukur rata-rata kerugian
+ * tiap level lalu membandingkannya. Dua kali gagal dibuat andal, dan penyebabnya
+ * mendasar: pencarian dibatasi WAKTU, jadi kedalaman yang tercapai berbeda tiap
+ * jalan, dan skor akarnya ikut bergeser. Mematok sumber acak tidak menolong —
+ * variasinya datang dari jam, bukan dari acak.
+ *
+ * Jaminan tangganya sekarang datang dari tiga tes deterministik di berkas ini:
+ * errorMargin menurun monoton, langkah pilihan tidak pernah melewati errorMargin
+ * levelnya, dan level teratas selalu mengambil langkah terbaik. Ketiganya
+ * bersama-sama sudah menyiratkan urutan kekuatannya.
+ *
+ * Angka kerugian per level yang ada di README berasal dari benchmark sekali
+ * jalan, bukan dari suite ini — memang tempatnya di sana.
+ */
 
 /**
- * Rata-rata kerugian langkah pilihan sebuah level, dalam centipawn, diukur
- * dengan pembanding tetap di atas.
- *
- * Pembandingnya harus tetap. Mengukur sebuah level dengan pencariannya sendiri
- * tidak bisa dibandingkan antar level: level kedalaman 1 melihat sebaran skor
- * yang jauh lebih sempit daripada kedalaman 3, jadi kerugiannya terlihat kecil
- * padahal langkahnya justru lebih buruk.
+ * Menjalankan `run` dengan sumber acak yang dipatok pada satu nilai, supaya
+ * cabang mana yang diambil `pickByStrength` bisa dipilih dengan pasti.
  */
-function averageLoss(elo: EloRating, runs: number): number {
-  const best = REFERENCE[0].score
-  let total = 0
-
-  for (let i = 0; i < runs; i++) {
-    const { move } = chooseMove(new Position(OPEN_POSITION), elo)
-    if (!move) continue
-    const rated = REFERENCE.find(
-      (entry) =>
-        entry.move.from === move.from &&
-        entry.move.to === move.to &&
-        entry.move.promotion === move.promotion
-    )
-    total += best - (rated?.score ?? best)
+function withRandom<T>(value: number, run: () => T): T {
+  setRandomSource(() => value)
+  try {
+    return run()
+  } finally {
+    resetRandomSource()
   }
-  return total / runs
 }
 
-test('level rendah benar-benar memainkan langkah yang lebih buruk', () => {
-  const loss = averageLoss(400, 8)
-  assert.ok(loss > 0, `level 400 harus rugi skor rata-rata > 0, dapat ${loss.toFixed(1)} cp`)
+/**
+ * `0.999` mengambil kandidat paling ujung — langkah TERBURUK yang masih
+ * diizinkan `errorMargin`. Sekaligus tidak pernah memicu blunder, karena
+ * `0.999 < blunderChance` selalu salah.
+ */
+const WORST_ALLOWED = 0.999
+
+test('langkah terburuk yang boleh dipilih tetap dalam batas errorMargin', () => {
+  // Ini kontrak sesungguhnya dari sistem level, dan berlaku pada SETIAP
+  // pemilihan — bukan cuma rata-rata. Level dengan errorMargin 0 dilewati:
+  // sudah diuji terpisah, dan pencariannya paling mahal.
+  for (const elo of ELO_LEVELS) {
+    const profile = STRENGTH_PROFILES[elo]
+    if (profile.errorMargin === 0) continue
+
+    const result = withRandom(WORST_ALLOWED, () => chooseMove(new Position(OPEN_POSITION), elo))
+    const chosen = result.rootMoves.find(
+      (entry) =>
+        entry.move.from === result.move!.from &&
+        entry.move.to === result.move!.to &&
+        entry.move.promotion === result.move!.promotion
+    )
+    assert.ok(chosen, `level ${elo}: langkah pilihan harus ada di daftar akar`)
+
+    const loss = result.rootMoves[0].score - chosen!.score
+    assert.ok(
+      loss <= profile.errorMargin,
+      `level ${elo} memilih langkah ${loss} cp lebih buruk, melebihi batas ${profile.errorMargin} cp`
+    )
+  }
 })
 
-test('makin tinggi Elo, makin kecil kerugiannya terhadap pembanding yang sama', () => {
-  // Level 2000 sengaja tidak diikutkan: ia mencari lebih dalam daripada
-  // pembandingnya, jadi pembanding kedalaman 4 bukan wasit yang sah untuknya.
-  const weak = averageLoss(400, 8)
-  const mid = averageLoss(1200, 5)
-  const strong = averageLoss(1600, 3)
+test('analyseRootMoves memberi skor untuk setiap langkah legal, terurut', () => {
+  const position = new Position(OPEN_POSITION)
+  const legalCount = position.legalMoves().length
+  const analysed = analyseRootMoves(position, 2)
 
-  assert.ok(
-    weak > mid,
-    `400 (${weak.toFixed(1)} cp) harus rugi lebih banyak daripada 1200 (${mid.toFixed(1)} cp)`
-  )
-  assert.ok(
-    mid >= strong,
-    `1200 (${mid.toFixed(1)} cp) tidak boleh lebih baik daripada 1600 (${strong.toFixed(1)} cp)`
-  )
+  assert.equal(analysed.length, legalCount, 'setiap langkah legal harus dapat skor')
+  for (let i = 1; i < analysed.length; i++) {
+    assert.ok(analysed[i - 1].score >= analysed[i].score, 'harus terurut menurun')
+  }
+  // Jendela penuh: skornya harus benar-benar berbeda-beda, bukan seri di alpha.
+  assert.ok(new Set(analysed.map((entry) => entry.score)).size > 1)
+})
+
+test('jalur blunder tetap mengembalikan langkah legal', () => {
+  // `0` selalu memicu blunder di level yang punya blunderChance > 0. Jalur ini
+  // sengaja melewati errorMargin, jadi yang dijamin hanya legalitasnya.
+  for (const elo of ELO_LEVELS) {
+    if (STRENGTH_PROFILES[elo].blunderChance === 0) continue
+
+    const position = new Position(OPEN_POSITION)
+    const legal = position.legalMoves()
+    const { move } = withRandom(0, () => chooseMove(position, elo))
+
+    assert.ok(move, `level ${elo} harus tetap mengembalikan langkah`)
+    assert.ok(
+      legal.some(
+        (m) => m.from === move!.from && m.to === move!.to && m.promotion === move!.promotion
+      ),
+      `level ${elo} mengembalikan langkah tidak legal lewat jalur blunder`
+    )
+  }
 })
 
 test('skor langkah akar bermakna, bukan semuanya seri di batas alpha', () => {
