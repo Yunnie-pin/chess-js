@@ -7,6 +7,18 @@
  * rank = index >> 3 (0 berarti baris ke-8) dan file = index & 7 (0 = file a).
  */
 
+import {
+  CASTLING_HI,
+  CASTLING_LO,
+  EP_FILE_HI,
+  EP_FILE_LO,
+  PIECE_HI,
+  PIECE_INDEX,
+  PIECE_LO,
+  SIDE_HI,
+  SIDE_LO,
+  combineKey
+} from './zobrist.ts'
 import type {
   CastleSide,
   CastlingRights,
@@ -82,7 +94,9 @@ interface UndoRecord {
   epSquare: Square
   halfmove: number
   fullmove: number
-  key: string
+  hashLo: number
+  hashHi: number
+  key: number
   kingSquare: Square
 }
 
@@ -95,8 +109,12 @@ export class Position {
   halfmove!: number
   fullmove!: number
   kings!: Record<Color, Square>
-  key!: string
-  repetition!: Map<string, number>
+  /** Dua bagian kunci Zobrist 64-bit; di-update inkremental di `makeMove`. */
+  hashLo!: number
+  hashHi!: number
+  /** Kunci gabungan 53-bit, dipakai sebagai indeks `repetition`. */
+  key!: number
+  repetition!: Map<number, number>
   private undoStack!: UndoRecord[]
 
   constructor(fen: string = START_FEN) {
@@ -132,8 +150,55 @@ export class Position {
     this.fullmove = Number(fullmove)
     this.undoStack = []
     this.kings = { w: board.indexOf('wk'), b: board.indexOf('bk') }
-    this.key = this.positionKey()
+    this.recomputeHash()
     this.repetition = new Map([[this.key, 1]])
+  }
+
+  /** Bitmask hak rokade — bentuk yang dipakai tabel Zobrist. */
+  castlingMask(): number {
+    return (
+      (this.castling.wk ? 1 : 0) |
+      (this.castling.wq ? 2 : 0) |
+      (this.castling.bk ? 4 : 0) |
+      (this.castling.bq ? 8 : 0)
+    )
+  }
+
+  /**
+   * Menghitung ulang hash dari nol. Dipakai saat memuat posisi, dan oleh tes
+   * sebagai pembanding untuk memastikan update inkremental tidak melenceng.
+   */
+  recomputeHash(): void {
+    let lo = 0
+    let hi = 0
+    for (let square = 0; square < 64; square++) {
+      const piece = this.board[square]
+      if (!piece) continue
+      const index = PIECE_INDEX[piece] * 64 + square
+      lo ^= PIECE_LO[index]
+      hi ^= PIECE_HI[index]
+    }
+    const mask = this.castlingMask()
+    lo ^= CASTLING_LO[mask]
+    hi ^= CASTLING_HI[mask]
+    if (this.epSquare >= 0) {
+      lo ^= EP_FILE_LO[fileOf(this.epSquare)]
+      hi ^= EP_FILE_HI[fileOf(this.epSquare)]
+    }
+    if (this.turn === BLACK) {
+      lo ^= SIDE_LO
+      hi ^= SIDE_HI
+    }
+    this.hashLo = lo
+    this.hashHi = hi
+    this.key = combineKey(lo, hi)
+  }
+
+  /** XOR satu bidak di satu petak, masuk maupun keluar (XOR itu simetris). */
+  private xorPiece(piece: Piece, square: Square): void {
+    const index = PIECE_INDEX[piece] * 64 + square
+    this.hashLo ^= PIECE_LO[index]
+    this.hashHi ^= PIECE_HI[index]
   }
 
   fen(): string {
@@ -172,11 +237,6 @@ export class Position {
     if (this.castling.bk) text += 'k'
     if (this.castling.bq) text += 'q'
     return text || '-'
-  }
-
-  /** Kunci posisi untuk deteksi pengulangan — sengaja tanpa jam langkah. */
-  positionKey(): string {
-    return `${this.board.join(',')}|${this.turn}|${this.castlingText()}|${this.epSquare}`
   }
 
   pieceAt(square: Square): Piece | null {
@@ -411,8 +471,21 @@ export class Position {
       epSquare: this.epSquare,
       halfmove: this.halfmove,
       fullmove: this.fullmove,
+      hashLo: this.hashLo,
+      hashHi: this.hashHi,
       key: this.key,
       kingSquare: this.kings[color]
+    }
+
+    // Hak rokade dan petak en passant di-XOR keluar sekarang, lalu yang baru
+    // di-XOR masuk di akhir — lebih mudah dibaca daripada melacak tiap
+    // perubahannya satu per satu.
+    const oldMask = this.castlingMask()
+    this.hashLo ^= CASTLING_LO[oldMask]
+    this.hashHi ^= CASTLING_HI[oldMask]
+    if (this.epSquare >= 0) {
+      this.hashLo ^= EP_FILE_LO[fileOf(this.epSquare)]
+      this.hashHi ^= EP_FILE_HI[fileOf(this.epSquare)]
     }
 
     if (move.enPassant) {
@@ -426,20 +499,25 @@ export class Position {
       undo.capturedSquare = move.to
     }
 
-    board[move.to] = move.promotion ? ((color + move.promotion) as Piece) : move.piece
+    if (undo.captured) this.xorPiece(undo.captured, undo.capturedSquare)
+
+    const landing: Piece = move.promotion ? ((color + move.promotion) as Piece) : move.piece
+    board[move.to] = landing
     board[move.from] = null
+    this.xorPiece(move.piece, move.from)
+    this.xorPiece(landing, move.to)
 
     if (typeOf(move.piece) === 'k') {
       this.kings[color] = move.to
       if (move.castle) {
         const home = rankOf(move.from)
-        if (move.castle === 'k') {
-          board[sq(home, 5)] = board[sq(home, 7)]
-          board[sq(home, 7)] = null
-        } else {
-          board[sq(home, 3)] = board[sq(home, 0)]
-          board[sq(home, 0)] = null
-        }
+        const [rookFrom, rookTo] =
+          move.castle === 'k' ? [sq(home, 7), sq(home, 5)] : [sq(home, 0), sq(home, 3)]
+        const rook = board[rookFrom]!
+        board[rookTo] = rook
+        board[rookFrom] = null
+        this.xorPiece(rook, rookFrom)
+        this.xorPiece(rook, rookTo)
       }
       this.castling[`${color}k`] = false
       this.castling[`${color}q`] = false
@@ -455,8 +533,19 @@ export class Position {
     if (color === BLACK) this.fullmove++
     this.turn = opponent(color)
 
+    // Pasangan dari XOR-keluar di awal: masukkan hak rokade dan en passant yang baru.
+    const newMask = this.castlingMask()
+    this.hashLo ^= CASTLING_LO[newMask]
+    this.hashHi ^= CASTLING_HI[newMask]
+    if (this.epSquare >= 0) {
+      this.hashLo ^= EP_FILE_LO[fileOf(this.epSquare)]
+      this.hashHi ^= EP_FILE_HI[fileOf(this.epSquare)]
+    }
+    this.hashLo ^= SIDE_LO
+    this.hashHi ^= SIDE_HI
+    this.key = combineKey(this.hashLo, this.hashHi)
+
     this.undoStack.push(undo)
-    this.key = this.positionKey()
     this.repetition.set(this.key, (this.repetition.get(this.key) ?? 0) + 1)
     return move
   }
@@ -502,6 +591,10 @@ export class Position {
     this.halfmove = undo.halfmove
     this.fullmove = undo.fullmove
     this.turn = color
+    // Hash dipulihkan dari rekaman, bukan di-XOR balik. Hasilnya sama karena
+    // XOR simetris, tapi cara ini tidak bisa melenceng dari makeMove.
+    this.hashLo = undo.hashLo
+    this.hashHi = undo.hashHi
     this.key = undo.key
     return move
   }

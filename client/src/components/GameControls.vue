@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import type { Difficulty } from '@chess/shared/ai'
+import { ELO_LEVELS, STRENGTH_PROFILES } from '@chess/shared/ai'
+import type { EloRating } from '@chess/shared/ai'
 import type { GameMode } from '../composables/useChessGame.ts'
 import type { Color } from '@chess/shared/types'
 
 const mode = defineModel<GameMode>('mode', { required: true })
-const difficulty = defineModel<Difficulty>('difficulty', { required: true })
+const elo = defineModel<EloRating>('elo', { required: true })
 const showHints = defineModel<boolean>('showHints', { required: true })
 
 defineProps<{ humanColor: Color | null; canUndo: boolean; busy: boolean }>()
@@ -21,12 +22,10 @@ const MODES: { value: GameMode; label: string }[] = [
   { value: 'dua-pemain', label: 'Dua pemain' }
 ]
 
-const DIFFICULTIES: { value: Difficulty; label: string; hint: string }[] = [
-  { value: 'mudah', label: 'Mudah', hint: 'Sesekali salah langkah' },
-  { value: 'sedang', label: 'Sedang', hint: 'Kedalaman 3 langkah' },
-  { value: 'sulit', label: 'Sulit', hint: 'Kedalaman 4 langkah' },
-  { value: 'ahli', label: 'Ahli', hint: 'Sampai 6 langkah, 4 detik' }
-]
+const LEVELS = ELO_LEVELS.map((rating) => ({
+  value: rating,
+  label: `${rating} — ${STRENGTH_PROFILES[rating].label}`
+}))
 </script>
 
 <template>
@@ -49,12 +48,13 @@ const DIFFICULTIES: { value: Difficulty; label: string; hint: string }[] = [
 
     <template v-if="mode === 'lawan-komputer'">
       <div class="field">
-        <label class="field__label" for="difficulty">Tingkat kesulitan</label>
-        <select id="difficulty" v-model="difficulty" class="select">
-          <option v-for="option in DIFFICULTIES" :key="option.value" :value="option.value">
-            {{ option.label }} — {{ option.hint }}
+        <label class="field__label" for="elo">Kekuatan lawan</label>
+        <select id="elo" v-model="elo" class="select">
+          <option v-for="option in LEVELS" :key="option.value" :value="option.value">
+            {{ option.label }}
           </option>
         </select>
+        <p class="note">Angka Elo ini perkiraan, belum dikalibrasi lewat pertandingan.</p>
       </div>
 
       <div class="field">
@@ -144,6 +144,13 @@ const DIFFICULTIES: { value: Difficulty; label: string; hint: string }[] = [
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 600;
+}
+
+.note {
+  margin: 0.1rem 0 0;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.35;
 }
 
 .select {

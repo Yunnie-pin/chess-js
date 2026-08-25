@@ -336,7 +336,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <GameControls
           v-else
           v-model:mode="offline.mode.value"
-          v-model:difficulty="offline.difficulty.value"
+          v-model:elo="offline.elo.value"
           v-model:show-hints="offline.showHints.value"
           :human-color="offline.humanColor.value"
           :can-undo="offline.history.value.length > 0"

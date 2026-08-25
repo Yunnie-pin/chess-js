@@ -8,8 +8,20 @@
 
 import { BLACK, Position, WHITE, colorOf, rankOf, typeOf } from './chess.ts'
 import type { Color, Move, PieceType } from './types.ts'
+import { TT_EXACT, TT_LOWER, TT_UPPER, ttProbe, ttStore } from './tt.ts'
+import type { TTHit } from './tt.ts'
 
-export type Difficulty = 'mudah' | 'sedang' | 'sulit' | 'ahli'
+/** Level kekuatan yang bisa dipilih pemain, dinyatakan sebagai perkiraan Elo. */
+export const ELO_LEVELS = [400, 800, 1200, 1600, 2000] as const
+export type EloRating = (typeof ELO_LEVELS)[number]
+
+export const DEFAULT_ELO: EloRating = 1200
+
+/** Satu langkah di akar beserta skornya — dasar pemilihan langkah per level. */
+export interface RootMove {
+  move: Move
+  score: number
+}
 
 export interface SearchResult {
   move: Move | null
@@ -17,20 +29,37 @@ export interface SearchResult {
   depth: number
   nodes: number
   timeMs: number
+  /** Seluruh langkah akar, terurut dari terbaik. Kosong bila tidak ada langkah legal. */
+  rootMoves: RootMove[]
 }
 
-interface DifficultyProfile {
+interface StrengthProfile {
+  label: string
   maxDepth: number
   timeMs: number
-  /** Peluang memilih langkah acak dari daftar legal, untuk level rendah. */
+  /**
+   * Seberapa buruk langkah yang masih boleh dipilih, dalam centipawn di bawah
+   * langkah terbaik. Inilah yang membedakan level, bukan kedalaman semata:
+   * mesin yang mencari dalam tapi kadang memilih langkah kedua terbaik terasa
+   * jauh lebih manusiawi daripada mesin yang mencarinya dangkal.
+   */
+  errorMargin: number
+  /** Peluang mengabaikan hasil pencarian sepenuhnya dan asal pilih. */
   blunderChance: number
 }
 
-export const DIFFICULTY_PROFILES: Record<Difficulty, DifficultyProfile> = {
-  mudah: { maxDepth: 2, timeMs: 250, blunderChance: 0.35 },
-  sedang: { maxDepth: 3, timeMs: 700, blunderChance: 0.1 },
-  sulit: { maxDepth: 4, timeMs: 1600, blunderChance: 0 },
-  ahli: { maxDepth: 6, timeMs: 4000, blunderChance: 0 }
+/**
+ * PERINGATAN SOAL ANGKANYA: ini perkiraan kasar, BELUM dikalibrasi lewat
+ * pertandingan melawan mesin ber-rating. Urutannya dijamin (2000 jelas lebih
+ * kuat dari 1600), tapi jangan anggap 1200 di sini setara persis 1200 Lichess.
+ * Kalau ada yang terasa meleset, angka-angka di tabel ini yang disetel.
+ */
+export const STRENGTH_PROFILES: Record<EloRating, StrengthProfile> = {
+  400: { label: 'Pemula', maxDepth: 1, timeMs: 120, errorMargin: 500, blunderChance: 0.25 },
+  800: { label: 'Kasual', maxDepth: 2, timeMs: 300, errorMargin: 250, blunderChance: 0.1 },
+  1200: { label: 'Menengah', maxDepth: 3, timeMs: 700, errorMargin: 110, blunderChance: 0.03 },
+  1600: { label: 'Kuat', maxDepth: 4, timeMs: 1500, errorMargin: 40, blunderChance: 0 },
+  2000: { label: 'Maksimal', maxDepth: 7, timeMs: 4000, errorMargin: 0, blunderChance: 0 }
 }
 
 const PIECE_VALUE: Record<PieceType, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 }
@@ -155,11 +184,44 @@ function moveScore(move: Move): number {
   return score
 }
 
-const orderMoves = (moves: Move[]): Move[] =>
-  moves
-    .map((move) => ({ move, score: moveScore(move) }))
-    .sort((a, b) => b.score - a.score)
-    .map((entry) => entry.move)
+/** Nilai jauh di atas skor evaluasi apa pun, dipakai sebagai batas alpha-beta awal. */
+const INF = 1_000_000
+
+/** Di atas ambang ini sebuah skor pasti berarti mat, bukan keunggulan materi. */
+const MATE_THRESHOLD = MATE_SCORE - 1000
+
+/**
+ * Skor mat disimpan relatif terhadap posisi itu sendiri, bukan terhadap akar
+ * pencarian. Tanpa ini, "mat dalam 3" yang ditemukan di kedalaman 5 akan dibaca
+ * sebagai "mat dalam 3" juga ketika posisi yang sama muncul di kedalaman 2.
+ */
+const scoreToTT = (score: number, ply: number): number =>
+  score >= MATE_THRESHOLD ? score + ply : score <= -MATE_THRESHOLD ? score - ply : score
+
+const scoreFromTT = (score: number, ply: number): number =>
+  score >= MATE_THRESHOLD ? score - ply : score <= -MATE_THRESHOLD ? score + ply : score
+
+/**
+ * Mengurutkan langkah. `hit` adalah entri tabel untuk posisi ini bila ada —
+ * langkah terbaiknya ditaruh paling depan karena kemungkinan besar masih yang
+ * terbaik, dan itu membuat pemangkasan terjadi jauh lebih awal.
+ */
+function orderMoves(moves: Move[], hit?: TTHit | null): Move[] {
+  const scored = moves.map((move) => {
+    let score = moveScore(move)
+    if (
+      hit &&
+      hit.from === move.from &&
+      hit.to === move.to &&
+      hit.promotion === move.promotion
+    ) {
+      score += 1_000_000
+    }
+    return { move, score }
+  })
+  scored.sort((a, b) => b.score - a.score)
+  return scored.map((entry) => entry.move)
+}
 
 class Searcher {
   nodes = 0
@@ -171,8 +233,16 @@ class Searcher {
     this.position = position
   }
 
-  /** Cari langkah terbaik dengan memperdalam bertahap sampai batas waktu habis. */
-  search(maxDepth: number, timeMs: number): SearchResult {
+  /**
+   * Cari langkah terbaik dengan memperdalam bertahap sampai batas waktu habis.
+   *
+   * `exactRootScores` mematikan penyempitan alpha di akar. Dengan penyempitan,
+   * langkah selain yang terbaik cuma dapat batas atas — cukup untuk memilih
+   * yang terbaik, tapi tidak cukup untuk level Elo rendah yang justru perlu
+   * tahu seberapa buruk sebuah langkah supaya bisa memilih yang agak jelek
+   * secara terukur.
+   */
+  search(maxDepth: number, timeMs: number, exactRootScores = false): SearchResult {
     const started = Date.now()
     this.deadline = started + timeMs
     this.nodes = 0
@@ -182,36 +252,55 @@ class Searcher {
     let best: Move | null = root[0] ?? null
     let bestScore = 0
     let reached = 0
+    let rootMoves: RootMove[] = root.map((move) => ({ move, score: 0 }))
 
     for (let depth = 1; depth <= maxDepth; depth++) {
-      let alpha = -Infinity
-      let localBest: Move | null = null
-      let localScore = -Infinity
+      let alpha = -INF
+      let iterationBest: Move | null = null
+      let iterationScore = -INF
+      const scored: RootMove[] = []
 
       for (const move of root) {
         this.position.makeMove(move)
-        const score = -this.negamax(depth - 1, -Infinity, -alpha)
+        const score = exactRootScores
+          ? -this.negamax(depth - 1, -INF, INF, 1)
+          : -this.negamax(depth - 1, -INF, -alpha, 1)
         this.position.undoMove()
 
         if (this.aborted) break
-        if (score > localScore) {
-          localScore = score
-          localBest = move
+        scored.push({ move, score })
+        if (score > iterationScore) {
+          iterationScore = score
+          iterationBest = move
         }
         if (score > alpha) alpha = score
       }
 
+      // Kedalaman yang tidak selesai dibuang seluruhnya — separuh hasil lebih
+      // menyesatkan daripada hasil kedalaman sebelumnya yang utuh.
       if (this.aborted) break
-      if (localBest) {
-        best = localBest
-        bestScore = localScore
-        reached = depth
-        // Urutkan ulang agar langkah terbaik dicoba lebih dulu di kedalaman berikutnya.
-        root.splice(root.indexOf(localBest), 1)
-        root.unshift(localBest)
+
+      scored.sort((a, b) => b.score - a.score)
+
+      // Dengan penyempitan alpha, setiap langkah yang gagal-rendah melaporkan
+      // skor yang sama dengan alpha, jadi hasil sort penuh seri dan urutannya
+      // tidak bermakna. Yang benar-benar menaikkan alpha dipastikan di depan.
+      if (!exactRootScores && iterationBest) {
+        const index = scored.findIndex((entry) => entry.move === iterationBest)
+        if (index > 0) scored.unshift(...scored.splice(index, 1))
       }
+
+      rootMoves = scored
+      best = scored[0]?.move ?? best
+      bestScore = scored[0]?.score ?? bestScore
+      reached = depth
+
+      // Urutkan ulang agar langkah terbaik dicoba lebih dulu di kedalaman berikutnya.
+      root.length = 0
+      for (const entry of scored) root.push(entry.move)
+
       // Skakmat sudah ditemukan — memperdalam tidak menghasilkan apa-apa lagi.
-      if (Math.abs(bestScore) > MATE_SCORE - 100) break
+      if (Math.abs(bestScore) >= MATE_THRESHOLD) break
     }
 
     return {
@@ -219,7 +308,8 @@ class Searcher {
       score: bestScore,
       depth: reached,
       nodes: this.nodes,
-      timeMs: Date.now() - started
+      timeMs: Date.now() - started,
+      rootMoves
     }
   }
 
@@ -229,31 +319,70 @@ class Searcher {
     return this.aborted
   }
 
-  private negamax(depth: number, alpha: number, beta: number): number {
+  private negamax(depth: number, alpha: number, beta: number, ply: number): number {
     this.nodes++
     if (this.outOfTime()) return 0
 
     if (depth <= 0) return this.quiescence(alpha, beta)
 
     const position = this.position
-    const moves = position.legalMoves()
-    if (moves.length === 0) {
-      // Skakmat lebih cepat bernilai lebih baik, jadi kedalaman ikut dihitung.
-      return position.inCheck() ? -MATE_SCORE - depth : 0
-    }
+
+    // Remis dicek sebelum tabel: skor remis bergantung pada riwayat langkah,
+    // bukan cuma pada posisi, jadi tidak boleh diambil dari cache.
     if (position.halfmove >= 100 || (position.repetition.get(position.key) ?? 0) >= 3) return 0
 
-    let best = -Infinity
-    for (const move of orderMoves(moves)) {
+    const lo = position.hashLo
+    const hi = position.hashHi
+    const alphaBefore = alpha
+
+    const hit = ttProbe(lo, hi)
+    if (hit && hit.depth >= depth) {
+      const score = scoreFromTT(hit.score, ply)
+      if (hit.flag === TT_EXACT) return score
+      if (hit.flag === TT_LOWER && score > alpha) alpha = score
+      else if (hit.flag === TT_UPPER && score < beta) beta = score
+      if (alpha >= beta) return score
+    }
+
+    const moves = position.legalMoves()
+    if (moves.length === 0) {
+      // Mat yang lebih cepat bernilai lebih baik bagi pihak yang mengeksekusi.
+      return position.inCheck() ? -MATE_SCORE + ply : 0
+    }
+
+    // Langkah terbaik dari pencarian sebelumnya dicoba duluan. Ini sumber
+    // percepatan terbesar dari tabel — bukan cache hit-nya, tapi urutan yang
+    // jauh lebih baik sehingga alpha-beta memangkas lebih awal.
+    const ordered = orderMoves(moves, hit)
+
+    let best = -INF
+    let bestMove: Move | null = null
+
+    for (const move of ordered) {
       position.makeMove(move)
-      const score = -this.negamax(depth - 1, -beta, -alpha)
+      const score = -this.negamax(depth - 1, -beta, -alpha, ply + 1)
       position.undoMove()
 
       if (this.aborted) return 0
-      if (score > best) best = score
+      if (score > best) {
+        best = score
+        bestMove = move
+      }
       if (best > alpha) alpha = best
       if (alpha >= beta) break // pemangkasan beta
     }
+
+    const flag = best <= alphaBefore ? TT_UPPER : best >= beta ? TT_LOWER : TT_EXACT
+    ttStore(
+      lo,
+      hi,
+      depth,
+      flag,
+      scoreToTT(best, ply),
+      bestMove ? bestMove.from : -1,
+      bestMove ? bestMove.to : -1,
+      bestMove ? bestMove.promotion : null
+    )
     return best
   }
 
@@ -282,39 +411,83 @@ class Searcher {
 }
 
 /**
- * Pilih langkah untuk pihak yang sedang jalan. Pencarian berjalan sinkron dan
- * memblokir, jadi pemanggil sebaiknya menjalankannya lewat Web Worker atau
- * setelah UI sempat menggambar indikator "berpikir".
+ * Memilih langkah dari daftar akar sesuai kekuatan yang diminta.
+ *
+ * Level rendah TIDAK dibuat lemah dengan mencari lebih dangkal saja. Mesin
+ * dangkal salahnya seragam dan aneh; mesin yang mencari cukup dalam lalu
+ * sesekali memilih langkah kedua atau ketiga terbaik salahnya mirip manusia —
+ * kadang melewatkan taktik, bukan tiba-tiba menggantung menteri.
  */
-export function chooseMove(position: Position, difficulty: Difficulty = 'sedang'): SearchResult {
-  const profile = DIFFICULTY_PROFILES[difficulty]
-  const legal = position.legalMoves()
-  if (legal.length === 0) return { move: null, score: 0, depth: 0, nodes: 0, timeMs: 0 }
+function pickByStrength(rootMoves: RootMove[], profile: StrengthProfile): Move | null {
+  if (rootMoves.length === 0) return null
 
-  // Level rendah sesekali asal jalan supaya pemain baru punya peluang.
+  // Sesekali benar-benar meleset, tanpa memandang skor. Ini yang membuat level
+  // pemula bisa dikalahkan pemain baru.
   if (profile.blunderChance > 0 && Math.random() < profile.blunderChance) {
-    return {
-      move: legal[Math.floor(Math.random() * legal.length)],
-      score: 0,
-      depth: 0,
-      nodes: 0,
-      timeMs: 0
-    }
+    return rootMoves[Math.floor(Math.random() * rootMoves.length)].move
   }
+  if (profile.errorMargin <= 0) return rootMoves[0].move
+
+  const best = rootMoves[0].score
+  const candidates = rootMoves.filter((entry) => best - entry.score <= profile.errorMargin)
+
+  // Bobot linear: makin dekat ke langkah terbaik, makin besar peluang terpilih.
+  // Jadi langkah bagus tetap lebih sering keluar, tapi bukan selalu.
+  const weights = candidates.map((entry) => profile.errorMargin - (best - entry.score) + 1)
+  const total = weights.reduce((sum, weight) => sum + weight, 0)
+
+  let roll = Math.random() * total
+  for (let i = 0; i < candidates.length; i++) {
+    roll -= weights[i]
+    if (roll <= 0) return candidates[i].move
+  }
+  return candidates[candidates.length - 1].move
+}
+
+/**
+ * Pilih langkah untuk pihak yang sedang jalan pada kekuatan `elo`. Pencarian
+ * berjalan sinkron dan memblokir, jadi pemanggil sebaiknya menjalankannya lewat
+ * Web Worker atau setelah UI sempat menggambar indikator "berpikir".
+ */
+export function chooseMove(position: Position, elo: EloRating = DEFAULT_ELO): SearchResult {
+  const profile = STRENGTH_PROFILES[elo] ?? STRENGTH_PROFILES[DEFAULT_ELO]
+  const legal = position.legalMoves()
+  const empty: SearchResult = { move: null, score: 0, depth: 0, nodes: 0, timeMs: 0, rootMoves: [] }
+  if (legal.length === 0) return empty
 
   // Bekerja pada salinan agar posisi yang dipakai UI tidak tersentuh.
   const scratch = position.clone()
-  const result = new Searcher(scratch).search(profile.maxDepth, profile.timeMs)
-  if (!result.move) return { ...result, move: legal[0] }
+  // Skor akar yang tepat hanya dibutuhkan level yang memang memilih langkah
+  // tidak-terbaik; level maksimal tetap memakai penyempitan alpha yang cepat.
+  const result = new Searcher(scratch).search(
+    profile.maxDepth,
+    profile.timeMs,
+    profile.errorMargin > 0
+  )
+
+  const chosen = pickByStrength(result.rootMoves, profile) ?? result.move
+  if (!chosen) return { ...result, move: legal[0] }
 
   // Kembalikan objek langkah milik posisi asli, bukan milik salinan.
   const found = legal.find(
     (move) =>
-      move.from === result.move!.from &&
-      move.to === result.move!.to &&
-      move.promotion === result.move!.promotion
+      move.from === chosen.from && move.to === chosen.to && move.promotion === chosen.promotion
   )
   return { ...result, move: found ?? legal[0] }
+}
+
+/**
+ * Skor eksak untuk SETIAP langkah akar pada kedalaman tertentu, terurut dari
+ * terbaik. Berbeda dengan `chooseMove` yang cuma perlu tahu mana yang terbaik,
+ * fungsi ini mematikan penyempitan alpha sehingga skor langkah-langkah lain
+ * juga bisa dipercaya.
+ *
+ * Dipakai sebagai pembanding tetap saat mengukur kekuatan tiap level: mengukur
+ * sebuah langkah dengan pencarian level itu sendiri tidak bisa dibandingkan
+ * antar level, karena kedalamannya berbeda-beda.
+ */
+export function analyseRootMoves(position: Position, depth: number, timeMs = 10_000): RootMove[] {
+  return new Searcher(position.clone()).search(depth, timeMs, true).rootMoves
 }
 
 /** Skor dari sudut pandang satu warna — dipakai untuk bilah keunggulan di UI. */

@@ -171,7 +171,7 @@ test('memutar papan hanya mengubah sudut pandang', () =>
 test('komputer menjawab langkah pemain (jalur cadangan tanpa worker)', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.difficulty.value = 'mudah'
+    game.elo.value = 400
     game.playAs('w')
     await nextTick()
 
@@ -191,7 +191,7 @@ test('komputer menjawab langkah pemain (jalur cadangan tanpa worker)', () =>
 test('komputer menahan jawabannya selama jeda minimum', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.difficulty.value = 'mudah' // level tercepat: kadang menjawab tanpa mencari
+    game.elo.value = 400 // level tercepat: anggaran waktunya paling kecil
     game.playAs('w')
     await nextTick()
 
@@ -214,7 +214,7 @@ test('komputer menahan jawabannya selama jeda minimum', () =>
 test('membatalkan langkah selagi jeda berjalan menggugurkan jawaban komputer', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.difficulty.value = 'mudah'
+    game.elo.value = 400
     game.playAs('w')
     await nextTick()
 
@@ -232,7 +232,7 @@ test('membatalkan langkah selagi jeda berjalan menggugurkan jawaban komputer', (
 test('undo pada mode lawan komputer membatalkan sepasang langkah', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.difficulty.value = 'mudah'
+    game.elo.value = 400
     game.playAs('w')
     await nextTick()
 

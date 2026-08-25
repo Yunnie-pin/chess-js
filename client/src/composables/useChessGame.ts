@@ -11,8 +11,8 @@
 import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 
 import { Position, START_FEN, WHITE, algebraic, colorOf, opponent, typeOf } from '@chess/shared/chess'
-import { DIFFICULTY_PROFILES, chooseMove } from '@chess/shared/ai'
-import type { Difficulty } from '@chess/shared/ai'
+import { DEFAULT_ELO, ELO_LEVELS, STRENGTH_PROFILES, chooseMove } from '@chess/shared/ai'
+import type { EloRating } from '@chess/shared/ai'
 import type { AiRequest, AiResponse } from '../engine/ai.worker.ts'
 import type {
   Color,
@@ -59,7 +59,7 @@ export function useChessGame() {
   const orientation = ref<Color>(WHITE)
   const mode = ref<GameMode>('lawan-komputer')
   const aiColor = ref<Color>('b')
-  const difficulty = ref<Difficulty>('sedang')
+  const elo = ref<EloRating>(DEFAULT_ELO)
   const showHints = ref(true)
 
   const thinking = ref(false)
@@ -363,7 +363,7 @@ export function useChessGame() {
     const id = ++requestId
     thinking.value = true
     searchStartedAt = Date.now()
-    const request: AiRequest = { id, fen: position.fen(), difficulty: difficulty.value }
+    const request: AiRequest = { id, fen: position.fen(), elo: elo.value }
 
     const activeWorker = getWorker()
     if (activeWorker) {
@@ -376,7 +376,7 @@ export function useChessGame() {
     setTimeout(() => {
       if (id !== requestId) return
       const started = Date.now()
-      const result = chooseMove(position, difficulty.value)
+      const result = chooseMove(position, elo.value)
       applyAiResult({
         id,
         from: result.move?.from ?? null,
@@ -390,7 +390,7 @@ export function useChessGame() {
     }, 50)
   }
 
-  watch([mode, aiColor, difficulty], () => {
+  watch([mode, aiColor, elo], () => {
     invalidateSearch()
     scheduleAi()
   })
@@ -426,9 +426,10 @@ export function useChessGame() {
     orientation,
     mode,
     aiColor,
-    difficulty,
+    elo,
     showHints,
-    difficultyProfiles: DIFFICULTY_PROFILES,
+    eloLevels: ELO_LEVELS,
+    strengthProfiles: STRENGTH_PROFILES,
     // aksi
     activateSquare,
     dropPiece,

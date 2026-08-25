@@ -6,13 +6,13 @@
 
 import { Position } from '@chess/shared/chess'
 import { chooseMove } from '@chess/shared/ai'
-import type { Difficulty } from '@chess/shared/ai'
+import type { EloRating } from '@chess/shared/ai'
 import type { PromotionType, Square } from '@chess/shared/types'
 
 export interface AiRequest {
   id: number
   fen: string
-  difficulty: Difficulty
+  elo: EloRating
 }
 
 export interface AiResponse {
@@ -27,8 +27,8 @@ export interface AiResponse {
 }
 
 self.onmessage = (event: MessageEvent<AiRequest>) => {
-  const { id, fen, difficulty } = event.data
-  const result = chooseMove(new Position(fen), difficulty)
+  const { id, fen, elo } = event.data
+  const result = chooseMove(new Position(fen), elo)
   const response: AiResponse = {
     id,
     from: result.move?.from ?? null,

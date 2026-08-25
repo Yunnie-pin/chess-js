@@ -24,7 +24,7 @@ dijalanin — `npm run dev:client` aja cukup.
 | `npm run dev`        | Server + client barengan                    |
 | `npm run dev:server` | Server multiplayer doang                    |
 | `npm run dev:client` | UI doang                                    |
-| `npm test`           | 73 test di tiga workspace                   |
+| `npm test`           | 91 test di tiga workspace                   |
 | `npm run typecheck`  | TypeScript strict, termasuk template Vue    |
 | `npm run build`      | Build client ke `client/dist/`              |
 | `npm start`          | Jalanin server buat production              |
@@ -126,7 +126,9 @@ beneran nggak bisa di-merge, nyalain di **Settings → Branches → Add rule** b
 ```
 shared/     Dipakai bareng client dan server — bukan punya salah satunya
   src/chess.ts       Papan, generate langkah, SAN, status permainan
-  src/ai.ts          Negamax + alpha-beta + quiescence
+  src/zobrist.ts     Tabel hash posisi
+  src/tt.ts          Transposition table
+  src/ai.ts          Negamax + alpha-beta + quiescence + TT
   src/protocol.ts    Kontrak pesan WebSocket + guard buat dua arah
   src/types.ts       Tipe dasar (Piece, Move, GameStatus, …)
 
@@ -170,7 +172,7 @@ en passant, promosi pakai pilihan bidak, skak, skakmat, dan semua kondisi remis
 (stalemate, materi nggak cukup, posisi ngulang tiga kali, aturan 50 langkah).
 
 Klik dua petak atau drag bidaknya — dua-duanya jalan di desktop maupun layar
-sentuh. Lawan komputer ada empat level, dengan jeda balasan minimal 500 ms biar
+sentuh. Lawan komputer punya lima level Elo, dengan jeda balasan minimal 500 ms biar
 langkah lawan nggak muncul mendadak.
 
 Shortcut: `←` undo, `F` puter papan, `Esc` batal pilih.
@@ -185,6 +187,58 @@ dulu, baru disaring lewat `makeMove` / `undoMove`.
 sama angka acuan chessprogramming.org buat lima posisi standar, termasuk
 Kiwipete, sampai 197.281 posisi. Ini yang nangkep bug halus di rokade,
 en passant, sama pin — jenis bug yang biasanya lolos kalau cuma dites manual.
+
+**Level lawan pakai Elo, bukan kedalaman.** Bikin mesin lemah dengan mencari
+lebih dangkal doang itu hasilnya aneh — salahnya seragam dan nggak mirip
+manusia. Jadi tiap level punya dua tombol: kedalaman/waktu, plus `errorMargin`
+yaitu seberapa buruk langkah yang masih boleh dipilih. Mesin yang mencari cukup
+dalam tapi sesekali ambil langkah kedua terbaik salahnya jauh lebih manusiawi —
+kadang kelewatan taktik, bukan tiba-tiba nggantung menteri.
+
+Diukur pakai pembanding tetap (analisis kedalaman 4 di posisi yang sama),
+rata-rata kerugian per langkah:
+
+```
+400   Pemula     depth 1    129,6 cp
+800   Kasual     depth 2     69,9 cp
+1200  Menengah   depth 3     19,4 cp
+1600  Kuat       depth 4      8,1 cp
+2000  Maksimal   depth 6      0,0 cp
+```
+
+Pembandingnya wajib tetap. Awalnya tiap level diukur pakai pencariannya sendiri,
+dan hasilnya nyesatin: level 400 kelihatan cuma rugi 33 cp — lebih kecil dari
+level 800 — padahal langkahnya jelas lebih buruk. Sebabnya pencarian kedalaman 1
+memang cuma lihat sebaran skor yang sempit, jadi "kerugian" relatifnya kecil.
+
+**Angka Elo-nya perkiraan**, belum dikalibrasi lewat pertandingan lawan mesin
+ber-rating. Urutannya dijamin naik, tapi jangan anggap 1200 di sini persis sama
+dengan 1200 Lichess. Semua angkanya ada di satu tabel `STRENGTH_PROFILES` di
+[ai.ts](shared/src/ai.ts) kalau mau disetel.
+
+**Zobrist hashing.** Kunci posisi dulunya string hasil `board.join(',')`,
+dibangun ulang tiap `makeMove`. Diukur pakai perft, itu makan **70% waktu
+engine**. Sekarang kuncinya XOR bilangan yang di-update inkremental — O(1) per
+langkah, bukan O(64) — dan hasilnya engine jadi **2,3x lebih cepat**.
+
+Update inkremental itu gampang salah dan gejalanya baru muncul jauh belakangan,
+jadi `zobrist.test.ts` menjalankan seluruh pohon langkah sampai kedalaman 4 dan
+membandingkan hash inkremental dengan hitung-ulang dari nol di **setiap** posisi,
+termasuk setelah `undoMove`.
+
+**Transposition table.** Posisi yang sama sering dicapai lewat urutan langkah
+berbeda; tanpa tabel, tiap jalur dihitung ulang. Disimpan di typed array paralel
+(2^18 entri, ~4,5 MB) supaya nggak bikin ratusan ribu objek per pencarian.
+Entri diverifikasi pakai kunci 64-bit penuh, bukan cuma indeks slot-nya — dua
+posisi beda bisa jatuh ke slot yang sama, dan memakai hasil yang salah jauh
+lebih buruk daripada sekadar kehilangan cache hit.
+
+Skor mat disimpan relatif terhadap posisinya, bukan terhadap akar pencarian.
+Kalau nggak, "mat dalam 3" yang ketemu di kedalaman 5 bakal kebaca "mat dalam 3"
+juga waktu posisi yang sama muncul di kedalaman 2.
+
+Gabungan keduanya: level **ahli naik dari kedalaman 5 ke 6**, dan selesainya
+malah lebih cepat (2,9 dtk vs 4,0 dtk sebelumnya).
 
 **Kenapa engine-nya di `shared/`.** Server wajib validasi tiap langkah, jadi
 aturan catur bukan punya client. Kalau dicopy ke dua tempat, cepat atau lambat
@@ -204,7 +258,7 @@ module worker, client otomatis pindah ke jalur sinkron.
 ## Testing
 
 ```
-shared/   20 test   perft, SAN, deteksi remis, evaluasi + search AI
+shared/   38 test   perft, SAN, remis, konsistensi hash Zobrist, tangga Elo
 server/   28 test   aturan room, kursi, token; plus integrasi WebSocket beneran
 client/   25 test   state main lokal, dan end-to-end lawan server asli
 ```
