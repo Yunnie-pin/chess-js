@@ -3,7 +3,10 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 
 import ChessPiece from './ChessPiece.vue'
 import { FILES, colorOf, fileOf, isLightSquare, rankOf } from '@chess/shared/chess'
+import { useI18n } from '../i18n/index.ts'
 import type { Color, Move, Piece, Square } from '@chess/shared/types'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   board: (Piece | null)[]
@@ -143,7 +146,7 @@ const dragStyle = computed(() => {
       class="board"
       :class="{ 'board--dragging': drag?.moved }"
       role="grid"
-      aria-label="Papan catur"
+      :aria-label="t('board.ariaLabel')"
     >
       <div
         v-for="square in squares"

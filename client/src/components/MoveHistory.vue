@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 
+import { useI18n } from '../i18n/index.ts'
 
+const { t } = useI18n()
 
 interface Row {
   number: number
@@ -26,9 +28,9 @@ watch(
 
 <template>
   <section class="history">
-    <h2 class="history__title">Daftar langkah</h2>
+    <h2 class="history__title">{{ t('history.title') }}</h2>
     <div ref="listEl" class="history__scroll">
-      <p v-if="!rows.length" class="history__empty">Belum ada langkah.</p>
+      <p v-if="!rows.length" class="history__empty">{{ t('history.empty') }}</p>
       <table v-else class="history__table">
         <tbody>
           <tr v-for="row in rows" :key="row.number">

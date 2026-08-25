@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
 import GameControls from './components/GameControls.vue'
+import LanguageSwitch from './components/LanguageSwitch.vue'
 import MariHalo from './components/MariHalo.vue'
 import MariPortrait from './components/MariPortrait.vue'
 import MoveHistory from './components/MoveHistory.vue'
@@ -13,11 +14,14 @@ import RepoLink from './components/RepoLink.vue'
 import RoomPanel from './components/RoomPanel.vue'
 import { useChessGame } from './composables/useChessGame.ts'
 import { useOnlineGame } from './composables/useOnlineGame.ts'
+import { useI18n } from './i18n/index.ts'
 import { resolveServerUrl } from './net/serverUrl.ts'
 import { opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
 
 type AppMode = 'offline' | 'online'
+
+const { t, formatNumber } = useI18n()
 
 const offline = useChessGame()
 const online = useOnlineGame(resolveServerUrl())
@@ -25,15 +29,8 @@ const online = useOnlineGame(resolveServerUrl())
 const appMode = ref<AppMode>('offline')
 const orientation = ref<Color>('w')
 
-const COLOR_NAMES: Record<Color, string> = { w: 'Putih', b: 'Hitam' }
-
-const END_MESSAGES: Record<GameEndReason, string> = {
-  checkmate: 'Skakmat',
-  stalemate: 'Remis — raja terkunci (stalemate)',
-  'insufficient-material': 'Remis — materi tidak cukup untuk menang',
-  threefold: 'Remis — posisi berulang tiga kali',
-  'fifty-move': 'Remis — aturan 50 langkah'
-}
+const colorName = (color: Color): string => t(`color.${color}`)
+const endMessage = (reason: GameEndReason): string => t(`end.${reason}`)
 
 const isOnline = computed(() => appMode.value === 'online')
 
@@ -123,32 +120,35 @@ const cancelPromotion = () =>
 const statusText = computed(() => {
   if (isOnline.value) {
     const room = online.roomState.value
-    if (!room) return 'Belum berada di room mana pun'
-    if (room.waiting) return 'Menunggu lawan bergabung…'
+    if (!room) return t('status.noRoom')
+    if (room.waiting) return t('status.waitingOpponent')
     if (room.resignedBy) {
-      return `${COLOR_NAMES[room.resignedBy]} menyerah — ${COLOR_NAMES[opponent(room.resignedBy)]} menang`
+      return t('status.resigned', {
+        loser: colorName(room.resignedBy),
+        winner: colorName(opponent(room.resignedBy))
+      })
     }
     const state = online.gameStatus.value
     if (state?.over) {
       return state.reason === 'checkmate'
-        ? `Skakmat — ${COLOR_NAMES[state.winner!]} menang`
-        : END_MESSAGES[state.reason!]
+        ? t('status.checkmateWin', { winner: colorName(state.winner!) })
+        : endMessage(state.reason!)
     }
-    if (online.isSpectator.value) return `Menonton — giliran ${COLOR_NAMES[turn.value]}`
+    if (online.isSpectator.value) return t('status.spectating', { color: colorName(turn.value) })
     const mine = turn.value === online.myColor.value
-    if (state?.check) return mine ? 'Anda sedang skak!' : 'Lawan sedang skak!'
-    return mine ? 'Giliran Anda' : 'Menunggu langkah lawan…'
+    if (state?.check) return mine ? t('status.youInCheck') : t('status.opponentInCheck')
+    return mine ? t('status.yourTurn') : t('status.waitingMove')
   }
 
   const state = offline.status.value
   if (state.over) {
     return state.reason === 'checkmate'
-      ? `Skakmat — ${COLOR_NAMES[state.winner!]} menang`
-      : END_MESSAGES[state.reason!]
+      ? t('status.checkmateWin', { winner: colorName(state.winner!) })
+      : endMessage(state.reason!)
   }
-  if (offline.thinking.value) return 'Komputer sedang berpikir…'
-  const side = COLOR_NAMES[turn.value]
-  return state.check ? `${side} sedang skak!` : `Giliran ${side}`
+  if (offline.thinking.value) return t('status.thinking')
+  const color = colorName(turn.value)
+  return state.check ? t('status.sideInCheck', { color }) : t('status.sideTurn', { color })
 })
 
 const statusTone = computed(() => {
@@ -176,14 +176,15 @@ const bottomColor = computed<Color>(() => orientation.value)
 function playerLabel(color: Color): string {
   if (isOnline.value) {
     const player = online.roomState.value?.players.find((entry) => entry.seat === color)
-    if (!player) return `${COLOR_NAMES[color]} — kosong`
-    const you = color === online.myColor.value ? ' (Anda)' : ''
-    return `${player.name}${you}${player.connected ? '' : ' — terputus'}`
+    if (!player) return t('player.empty', { color: colorName(color) })
+    const you = color === online.myColor.value ? ` (${t('player.you')})` : ''
+    const gone = player.connected ? '' : ` — ${t('player.disconnected')}`
+    return `${player.name}${you}${gone}`
   }
-  if (offline.mode.value === 'dua-pemain') return COLOR_NAMES[color]
+  if (offline.mode.value === 'dua-pemain') return colorName(color)
   return color === offline.humanColor.value
-    ? `Anda (${COLOR_NAMES[color]})`
-    : `Komputer (${COLOR_NAMES[color]})`
+    ? t('player.human', { color: colorName(color) })
+    : t('player.computer', { color: colorName(color) })
 }
 
 const leadFor = (color: Color): number =>
@@ -192,7 +193,11 @@ const leadFor = (color: Color): number =>
 const searchInfo = computed(() => {
   const search = offline.lastSearch.value
   if (isOnline.value || !search || !search.depth) return null
-  return `kedalaman ${search.depth} · ${search.nodes.toLocaleString('id-ID')} simpul · ${search.timeMs} ms`
+  return t('meta.searchInfo', {
+    depth: search.depth,
+    nodes: formatNumber(search.nodes),
+    ms: search.timeMs
+  })
 })
 
 const canResign = computed(
@@ -236,27 +241,30 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <MariHalo />
         <div>
           <h1 class="app__title">Chess with Mari</h1>
-          <p class="app__subtitle">Vue 3 · TypeScript · aturan lengkap FIDE</p>
+          <p class="app__subtitle">{{ t('app.subtitle') }}</p>
         </div>
       </div>
-      <nav class="modes">
-        <button
-          type="button"
-          class="modes__item"
-          :class="{ 'modes__item--on': appMode === 'offline' }"
-          @click="appMode = 'offline'"
-        >
-          Lokal
-        </button>
-        <button
-          type="button"
-          class="modes__item"
-          :class="{ 'modes__item--on': appMode === 'online' }"
-          @click="appMode = 'online'"
-        >
-          Online
-        </button>
-      </nav>
+      <div class="app__tools">
+        <nav class="modes">
+          <button
+            type="button"
+            class="modes__item"
+            :class="{ 'modes__item--on': appMode === 'offline' }"
+            @click="appMode = 'offline'"
+          >
+            {{ t('app.modeLocal') }}
+          </button>
+          <button
+            type="button"
+            class="modes__item"
+            :class="{ 'modes__item--on': appMode === 'online' }"
+            @click="appMode = 'online'"
+          >
+            {{ t('app.modeOnline') }}
+          </button>
+        </nav>
+        <LanguageSwitch />
+      </div>
     </header>
 
     <main class="layout">
@@ -265,7 +273,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <div class="player__id">
             <span class="player__dot" :class="`player__dot--${topColor}`" />
             <span class="player__name">{{ playerLabel(topColor) }}</span>
-            <span v-if="turn === topColor" class="player__turn">giliran</span>
+            <span v-if="turn === topColor" class="player__turn">{{ t('player.turnBadge') }}</span>
           </div>
           <CapturedPieces
             :color="opponent(topColor)"
@@ -291,7 +299,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <div class="player__id">
             <span class="player__dot" :class="`player__dot--${bottomColor}`" />
             <span class="player__name">{{ playerLabel(bottomColor) }}</span>
-            <span v-if="turn === bottomColor" class="player__turn">giliran</span>
+            <span v-if="turn === bottomColor" class="player__turn">{{ t('player.turnBadge') }}</span>
           </div>
           <CapturedPieces
             :color="opponent(bottomColor)"
@@ -331,7 +339,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             @rematch="online.rematch"
             @leave="online.leaveRoom"
           />
-          <button type="button" class="flip" @click="flipBoard">Putar papan</button>
+          <button type="button" class="flip" @click="flipBoard">{{ t('board.flip') }}</button>
         </template>
 
         <GameControls
@@ -351,14 +359,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <MoveHistory :rows="historyRows" :ply-count="plyCount" />
 
         <footer class="meta">
-          <p v-if="searchInfo" class="meta__line">Pencarian terakhir: {{ searchInfo }}</p>
+          <p v-if="searchInfo" class="meta__line">{{ t('meta.lastSearch') }} {{ searchInfo }}</p>
           <p v-if="!isOnline" class="meta__line meta__fen" :title="offline.fen.value">
             FEN: {{ offline.fen.value }}
           </p>
           <p class="meta__line meta__keys">
-            Pintasan:
-            <template v-if="!isOnline"><kbd>←</kbd> batalkan · </template>
-            <kbd>F</kbd> putar papan · <kbd>Esc</kbd> batal pilih
+            {{ t('meta.shortcuts') }}
+            <template v-if="!isOnline"><kbd>←</kbd> {{ t('meta.keyUndo') }} · </template>
+            <kbd>F</kbd> {{ t('meta.keyFlip') }} · <kbd>Esc</kbd> {{ t('meta.keyDeselect') }}
           </p>
         </footer>
       </aside>
@@ -426,6 +434,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   margin: 0.15rem 0 0;
   font-size: 0.84rem;
   color: var(--text-muted);
+}
+
+/* Pemilih mode dan pemilih bahasa berdampingan; membungkus ke bawah di layar sempit. */
+.app__tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .modes {

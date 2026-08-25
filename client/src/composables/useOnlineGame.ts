@@ -10,6 +10,8 @@
 
 import { computed, onScopeDispose, ref, shallowRef } from 'vue'
 
+import { readStorage, writeStorage } from '../storage.ts'
+import { t } from '../i18n/index.ts'
 import { Position, opponent } from '@chess/shared/chess'
 import type { Color, Move, Piece, PieceType, PromotionType, Square } from '@chess/shared/types'
 import { parseServerMessage } from '@chess/shared/protocol'
@@ -36,28 +38,33 @@ const TOKEN_KEY = 'catur.token'
 
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000]
 
-function readStorage(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null // mode privat / penyimpanan diblokir
-  }
-}
+/**
+ * Kegagalan yang ditemui klien sendiri, di luar kode galat milik protokol.
+ * Dibedakan supaya keduanya bisa dipetakan ke teks yang sama-sama diterjemahkan.
+ */
+type ClientErrorCode = 'connect'
 
-function writeStorage(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    /* tidak apa-apa: fitur ini hanya kenyamanan */
-  }
-}
+type ErrorState =
+  | { code: ServerErrorCode; params?: undefined }
+  | { code: ClientErrorCode; params: { url: string } }
 
 export function useOnlineGame(serverUrl: string) {
   const status = ref<ConnectionStatus>('terputus')
   const roomState = shallowRef<RoomState | null>(null)
   const seat = ref<Seat | null>(null)
-  const error = ref<string | null>(null)
   const playerName = ref(readStorage(NAME_KEY) ?? '')
+
+  /*
+   * Yang disimpan adalah kodenya, bukan kalimat kiriman server. Teks server
+   * selalu berbahasa Indonesia — kalau dipakai apa adanya, pemain yang memilih
+   * bahasa Inggris tetap mendapat pesan galat berbahasa Indonesia. Kodenya
+   * sendiri bagian dari protokol, jadi memang stabil untuk dipetakan.
+   */
+  const errorState = shallowRef<ErrorState | null>(null)
+
+  const error = computed<string | null>(() =>
+    errorState.value ? t(`error.${errorState.value.code}`, errorState.value.params) : null
+  )
 
   /** Posisi hasil rekonstruksi dari FEN milik server — bukan sumber kebenaran. */
   const position = shallowRef<Position | null>(null)
@@ -196,13 +203,13 @@ export function useOnlineGame(serverUrl: string) {
     }
     closedByUs = false
     status.value = 'menyambung'
-    error.value = null
+    errorState.value = null
 
     try {
       socket = new WebSocket(serverUrl)
     } catch {
       status.value = 'gagal'
-      error.value = `Tidak bisa menyambung ke ${serverUrl}.`
+      errorState.value = { code: 'connect', params: { url: serverUrl } }
       return
     }
 
@@ -217,7 +224,7 @@ export function useOnlineGame(serverUrl: string) {
         send({
           type: 'gabung-room',
           roomId: roomState.value.roomId,
-          name: playerName.value || 'Pemain',
+          name: playerName.value || t('lobby.namePlaceholder'),
           token: readStorage(TOKEN_KEY) ?? undefined
         })
       }
@@ -232,7 +239,7 @@ export function useOnlineGame(serverUrl: string) {
           seat.value = message.seat
           writeStorage(TOKEN_KEY, message.token)
           applyState(message.state)
-          error.value = null
+          errorState.value = null
           break
         case 'kondisi':
           // Kursi bisa berubah tanpa pesan 'bergabung' baru — mis. setelah main lagi.
@@ -243,7 +250,7 @@ export function useOnlineGame(serverUrl: string) {
           // Kondisi lengkap menyusul tepat setelah ini, jadi cukup catat sorotan.
           break
         case 'galat':
-          error.value = message.message
+          errorState.value = { code: message.code }
           break
       }
     })
@@ -289,7 +296,8 @@ export function useOnlineGame(serverUrl: string) {
   // ------------------------------------------------------------------
 
   function rememberName(name: string): string {
-    const cleaned = name.trim() || 'Pemain'
+    // Nama cadangan ikut bahasa pemain sendiri; ia yang menyiarkannya, bukan lawan.
+    const cleaned = name.trim() || t('lobby.namePlaceholder')
     playerName.value = cleaned
     writeStorage(NAME_KEY, cleaned)
     return cleaned
@@ -404,6 +412,8 @@ export function useOnlineGame(serverUrl: string) {
     // sambungan
     status,
     error,
+    /** Kode mentahnya — dipakai tes, yang tidak boleh bergantung pada bunyi kalimat. */
+    errorCode: computed(() => errorState.value?.code ?? null),
     connect,
     disconnect,
     // room

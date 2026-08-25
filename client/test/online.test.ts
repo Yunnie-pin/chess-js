@@ -190,7 +190,10 @@ test('room yang salah kode memberi pesan yang jelas', async () => {
   client.joinRoom('ZZZZ', 'Ani')
 
   await waitUntil(() => client.error.value !== null, 'pesan galat diterima')
-  assert.match(client.error.value!, /tidak ditemukan/i)
+  // Kodenya yang diperiksa, bukan bunyi kalimatnya: teks galat ikut bahasa yang
+  // dipilih pemain, sedangkan kode ini bagian dari protokol.
+  assert.equal(client.errorCode.value, 'room-tidak-ada')
+  assert.match(client.error.value!, /tidak ditemukan/i, 'teks bawaan tetap bahasa Indonesia')
   assert.equal(client.inRoom.value, false)
 })
 

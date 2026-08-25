@@ -6,6 +6,10 @@
  * `rel="noopener noreferrer"` wajib bersama `target="_blank"`: tanpa itu halaman
  * tujuan bisa mengakses `window.opener` dan mengarahkan ulang tab ini.
  */
+import { useI18n } from '../i18n/index.ts'
+
+const { t } = useI18n()
+
 const REPO_URL = 'https://github.com/Yunnie-pin/chess-js'
 </script>
 
@@ -25,8 +29,8 @@ const REPO_URL = 'https://github.com/Yunnie-pin/chess-js'
       />
     </svg>
     <span class="repo__text">
-      <strong>Open source</strong>
-      <span class="repo__sub">Ikut ngoprek di GitHub — issue dan PR dibuka</span>
+      <strong>{{ t('repo.title') }}</strong>
+      <span class="repo__sub">{{ t('repo.subtitle') }}</span>
     </span>
     <svg class="repo__arrow" viewBox="0 0 16 16" aria-hidden="true">
       <path

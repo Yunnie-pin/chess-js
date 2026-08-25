@@ -2,7 +2,10 @@
 import { computed } from 'vue'
 
 import { colorOf, typeOf } from '@chess/shared/chess'
+import { useI18n } from '../i18n/index.ts'
 import type { Piece, PieceType } from '@chess/shared/types'
+
+const { t } = useI18n()
 
 const props = defineProps<{ piece: Piece }>()
 
@@ -20,18 +23,16 @@ const GLYPHS: Record<PieceType, string> = {
   p: '♟'
 }
 
-const NAMES: Record<PieceType, string> = {
-  k: 'Raja',
-  q: 'Menteri',
-  r: 'Benteng',
-  b: 'Gajah',
-  n: 'Kuda',
-  p: 'Pion'
-}
-
 const type = computed(() => typeOf(props.piece))
 const color = computed(() => colorOf(props.piece))
-const label = computed(() => `${NAMES[type.value]} ${color.value === 'w' ? 'Putih' : 'Hitam'}`)
+
+/*
+ * Urutan nama bidak dan warnanya berbeda antar bahasa — "Menteri Putih" tapi
+ * "White Queen" — jadi susunannya ikut kamus, bukan dirangkai di sini.
+ */
+const label = computed(() =>
+  t('piece.ariaLabel', { piece: t(`piece.${type.value}`), color: t(`color.${color.value}`) })
+)
 </script>
 
 <template>

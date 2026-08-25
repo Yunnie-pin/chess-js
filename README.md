@@ -25,7 +25,7 @@ For local play only (vs computer / two players) you don't need the server —
 | `npm run dev`        | Server + client together                  |
 | `npm run dev:server` | Multiplayer server only                   |
 | `npm run dev:client` | UI only                                   |
-| `npm test`           | 92 tests across the three workspaces      |
+| `npm test`           | 101 tests across the three workspaces     |
 | `npm run typecheck`  | Strict TypeScript, Vue templates included |
 | `npm run build`      | Build the client into `client/dist/`      |
 | `npm start`          | Run the server for production             |
@@ -137,6 +137,7 @@ client/     Vue 3 UI
   src/composables/useChessGame.ts    Local play (two players / vs computer)
   src/composables/useOnlineGame.ts   Multiplayer client
   src/engine/ai.worker.ts            Web Worker wrapper for the AI
+  src/i18n/                          Indonesian and English text
   src/components/                    Board, lobby, room panel, move list, …
 ```
 
@@ -172,6 +173,30 @@ The computer opponent has five Elo levels, with a 500 ms minimum reply delay so
 its moves don't pop in out of nowhere.
 
 Shortcuts: `←` undo, `F` flip the board, `Esc` clear the selection.
+
+## Language
+
+The interface speaks Indonesian and English, switchable with the **ID/EN** toggle
+in the header. Your choice is remembered; on a first visit it follows the
+browser's language and falls back to Indonesian.
+
+There's no i18n library — key lookup and `{param}` substitution is the whole
+requirement, and vue-i18n would bring a message loader, an ICU formatter, and its
+own compile mode along with it. What a library normally buys you here, the
+compiler already does: `client/src/i18n/id.ts` defines the key set, `en.ts` is
+typed against it, so a forgotten translation fails `npm run typecheck` rather
+than showing up blank on screen.
+
+What TypeScript *can't* see is inside the strings. A translation that drops
+`{winner}` is still a perfectly valid string, and the bug only surfaces as a hole
+in a sentence, so `client/test/i18n.test.ts` compares the placeholders in every
+pair of strings.
+
+**Only what the player reads is translated.** The protocol values stay Indonesian
+in both languages — `buat-room`, `penonton`, `kondisi`, `galat` are the wire
+format, not labels. Error text is the interesting case: the server always
+describes failures in Indonesian, so the client ignores that prose and looks up
+its own text from the error *code*, which is part of the protocol and stable.
 
 ## Technical notes
 
@@ -257,7 +282,7 @@ the client falls back to a synchronous path automatically.
 ```
 shared/   39 tests   perft, SAN, draws, Zobrist hash consistency, the Elo ladder
 server/   28 tests   room rules, seats, tokens; plus real WebSocket integration
-client/   25 tests   local game state, and end-to-end against a real server
+client/   34 tests   local game state, dictionaries, end-to-end against a real server
 ```
 
 The server and client tests both spin up a real server process on their own port

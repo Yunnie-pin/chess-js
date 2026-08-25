@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
+import { useI18n } from '../i18n/index.ts'
 import type { ConnectionStatus } from '../composables/useOnlineGame.ts'
 import type { PlayerView, RoomState, Seat } from '@chess/shared/protocol'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   state: RoomState
@@ -29,34 +32,29 @@ async function copyCode(): Promise<void> {
   }
 }
 
-const SEAT_LABEL: Record<Seat, string> = { w: 'Putih', b: 'Hitam', penonton: 'Penonton' }
+/* Kursi dan keadaan sambungan dipetakan dari nilai protokolnya ke teks kamus. */
+const seatLabel = (value: Seat): string =>
+  value === 'penonton' ? t('seat.penonton') : t(`color.${value}`)
 
-const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  terputus: 'Terputus',
-  menyambung: 'Menyambung…',
-  tersambung: 'Tersambung',
-  gagal: 'Gagal tersambung'
-}
+const statusLabel = (value: ConnectionStatus): string => t(`conn.${value}`)
 
 const describe = (player: PlayerView): string =>
-  `${player.name}${player.connected ? '' : ' (terputus)'}`
+  player.connected ? player.name : `${player.name} (${t('player.disconnected')})`
 </script>
 
 <template>
   <section class="room">
     <div class="room__code">
       <div>
-        <span class="room__label">Kode room</span>
+        <span class="room__label">{{ t('room.codeLabel') }}</span>
         <strong class="room__value">{{ state.roomId }}</strong>
       </div>
       <button type="button" class="copy" @click="copyCode">
-        {{ copied ? 'Tersalin' : 'Salin' }}
+        {{ copied ? t('room.copied') : t('room.copy') }}
       </button>
     </div>
 
-    <p v-if="state.waiting" class="waiting">
-      Menunggu lawan bergabung. Bagikan kode di atas.
-    </p>
+    <p v-if="state.waiting" class="waiting">{{ t('room.waiting') }}</p>
 
     <ul class="players">
       <li v-for="player in state.players" :key="`${player.seat}-${player.name}`" class="player">
@@ -64,21 +62,23 @@ const describe = (player: PlayerView): string =>
         <span class="player__name" :class="{ 'player__name--me': player.seat === seat }">
           {{ describe(player) }}
         </span>
-        <span class="player__seat">{{ SEAT_LABEL[player.seat] }}</span>
+        <span class="player__seat">{{ seatLabel(player.seat) }}</span>
       </li>
     </ul>
 
     <div class="conn" :class="`conn--${status}`">
       <span class="conn__dot" />
-      {{ STATUS_LABEL[status] }}
+      {{ statusLabel(status) }}
     </div>
 
     <div class="actions">
       <button v-if="canRematch" type="button" class="btn btn--primary" @click="emit('rematch')">
-        Main lagi
+        {{ t('room.rematch') }}
       </button>
-      <button v-if="canResign" type="button" class="btn" @click="emit('resign')">Menyerah</button>
-      <button type="button" class="btn" @click="emit('leave')">Keluar room</button>
+      <button v-if="canResign" type="button" class="btn" @click="emit('resign')">
+        {{ t('room.resign') }}
+      </button>
+      <button type="button" class="btn" @click="emit('leave')">{{ t('room.leave') }}</button>
     </div>
   </section>
 </template>

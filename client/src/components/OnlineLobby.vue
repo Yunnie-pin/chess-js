@@ -2,8 +2,11 @@
 import { computed, ref } from 'vue'
 
 import { ROOM_CODE_LENGTH } from '@chess/shared/protocol'
+import { useI18n } from '../i18n/index.ts'
 import type { ConnectionStatus } from '../composables/useOnlineGame.ts'
 import type { Color } from '@chess/shared/types'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   status: ConnectionStatus
@@ -23,11 +26,12 @@ const seat = ref<Color | 'acak'>('acak')
 const codeReady = computed(() => code.value.trim().length === ROOM_CODE_LENGTH)
 const busy = computed(() => props.status === 'menyambung')
 
-const SEATS: { value: Color | 'acak'; label: string }[] = [
-  { value: 'acak', label: 'Acak' },
-  { value: 'w', label: 'Putih' },
-  { value: 'b', label: 'Hitam' }
-]
+/** 'acak' dan 'w'/'b' adalah nilai protokol; hanya labelnya yang ikut bahasa. */
+const SEATS = computed<{ value: Color | 'acak'; label: string }[]>(() => [
+  { value: 'acak', label: t('lobby.seatRandom') },
+  { value: 'w', label: t('color.w') },
+  { value: 'b', label: t('color.b') }
+])
 
 /** Kode room selalu huruf besar, dan tidak menerima karakter di luar alfabetnya. */
 function onCodeInput(event: Event): void {
@@ -44,17 +48,23 @@ const submitJoin = () => {
 <template>
   <section class="lobby">
     <header class="lobby__head">
-      <h2 class="lobby__title">Main online</h2>
-      <p class="lobby__sub">Buat room lalu bagikan kodenya, atau masuk dengan kode dari teman.</p>
+      <h2 class="lobby__title">{{ t('lobby.title') }}</h2>
+      <p class="lobby__sub">{{ t('lobby.subtitle') }}</p>
     </header>
 
     <label class="field">
-      <span class="field__label">Nama Anda</span>
-      <input v-model="name" class="input" type="text" maxlength="24" placeholder="Pemain" />
+      <span class="field__label">{{ t('lobby.yourName') }}</span>
+      <input
+        v-model="name"
+        class="input"
+        type="text"
+        maxlength="24"
+        :placeholder="t('lobby.namePlaceholder')"
+      />
     </label>
 
     <div class="block">
-      <span class="field__label">Buat room baru</span>
+      <span class="field__label">{{ t('lobby.createHeading') }}</span>
       <div class="segmented">
         <button
           v-for="option in SEATS"
@@ -68,14 +78,14 @@ const submitJoin = () => {
         </button>
       </div>
       <button type="button" class="btn btn--primary" :disabled="busy" @click="emit('create', name, seat)">
-        Buat room
+        {{ t('lobby.createButton') }}
       </button>
     </div>
 
-    <div class="divider"><span>atau</span></div>
+    <div class="divider"><span>{{ t('lobby.or') }}</span></div>
 
     <form class="block" @submit.prevent="submitJoin">
-      <label class="field__label" for="room-code">Masuk dengan kode</label>
+      <label class="field__label" for="room-code">{{ t('lobby.joinHeading') }}</label>
       <input
         id="room-code"
         class="input input--code"
@@ -87,13 +97,15 @@ const submitJoin = () => {
         :value="code"
         @input="onCodeInput"
       />
-      <button type="submit" class="btn" :disabled="!codeReady || busy">Gabung</button>
+      <button type="submit" class="btn" :disabled="!codeReady || busy">
+        {{ t('lobby.joinButton') }}
+      </button>
     </form>
 
     <p v-if="error" class="alert" role="alert">{{ error }}</p>
-    <p v-else-if="status === 'menyambung'" class="hint">Menyambung ke server…</p>
+    <p v-else-if="status === 'menyambung'" class="hint">{{ t('lobby.connecting') }}</p>
     <p v-else-if="status === 'gagal'" class="alert" role="alert">
-      Server tidak bisa dihubungi. Pastikan sudah dijalankan dengan <code>npm run dev:server</code>.
+      {{ t('lobby.serverUnreachable') }} <code>npm run dev:server</code>.
     </p>
   </section>
 </template>
