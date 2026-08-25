@@ -2,268 +2,272 @@
 
 [![CI](https://github.com/Yunnie-pin/chess-js/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Yunnie-pin/chess-js/actions/workflows/ci.yml)
 
-Catur di browser: main lawan komputer, atau online bareng temen lewat room.
-Engine, AI, sama servernya ditulis sendiri — nggak pakai library catur.
+Chess in the browser: play the computer, or play a friend online through a room.
+The engine, the AI, and the server are all written from scratch — no chess
+library.
 
-![Papan catur bertema emas dan gading, panel kontrol di kanan, dan potret Mari sebagai latar](https://i.imgur.com/jRiarIT.png)
+![Chess board in a gold and ivory theme, control panel on the right, and a portrait of Mari in the background](https://i.imgur.com/jRiarIT.png)
 
-## Jalanin
+## Running it
 
 ```bash
 npm install
-npm run dev      # server + client sekaligus
+npm run dev      # server + client together
 ```
 
-Client di <http://localhost:5173>, server di <http://localhost:8787>.
+Client on <http://localhost:5173>, server on <http://localhost:8787>.
 
-Kalau cuma mau main lokal (lawan komputer / dua pemain), servernya nggak usah
-dijalanin — `npm run dev:client` aja cukup.
+For local play only (vs computer / two players) you don't need the server —
+`npm run dev:client` is enough.
 
-| Perintah             | Buat apa                                    |
-| -------------------- | ------------------------------------------- |
-| `npm run dev`        | Server + client barengan                    |
-| `npm run dev:server` | Server multiplayer doang                    |
-| `npm run dev:client` | UI doang                                    |
-| `npm test`           | 91 test di tiga workspace                   |
-| `npm run typecheck`  | TypeScript strict, termasuk template Vue    |
-| `npm run build`      | Build client ke `client/dist/`              |
-| `npm start`          | Jalanin server buat production              |
+| Command              | What it does                              |
+| -------------------- | ----------------------------------------- |
+| `npm run dev`        | Server + client together                  |
+| `npm run dev:server` | Multiplayer server only                   |
+| `npm run dev:client` | UI only                                   |
+| `npm test`           | 91 tests across the three workspaces      |
+| `npm run typecheck`  | Strict TypeScript, Vue templates included |
+| `npm run build`      | Build the client into `client/dist/`      |
+| `npm start`          | Run the server for production             |
 
-Client nyambung ke `/ws` di origin yang sama, dan dev server Vite yang
-nerusin ke server catur. `VITE_SERVER_URL` cuma perlu diisi kalau servernya
-memang ada di host lain, misal
-`VITE_SERVER_URL=wss://catur.example.com npm run build`.
+The client connects to `/ws` on the same origin, and the Vite dev server proxies
+that to the chess server. You only need `VITE_SERVER_URL` if the server actually
+lives on a different host, e.g.
+`VITE_SERVER_URL=wss://chess.example.com npm run build`.
 
 ## Docker
 
 ```bash
-docker compose up --build      # buka http://localhost:8080
+docker compose up --build      # open http://localhost:8080
 ```
 
-nginx nyajiin client sekaligus nerusin `/ws` ke server lewat network internal
-compose. Jadi cuma satu port yang kebuka keluar, dan alamat server nggak
-ikut ke-bundle — satu image bisa dipakai di domain mana pun.
+nginx serves the client and also proxies `/ws` to the server over compose's
+internal network. So only one port is exposed, and the server address never gets
+baked into the bundle — one image works on any domain.
 
-### Ganti port
+### Changing the port
 
-Port host diatur lewat `CLIENT_PORT`, nggak usah ngedit `docker-compose.yml`.
-Tiga cara, sama aja hasilnya:
+The host port comes from `CLIENT_PORT`; no need to edit `docker-compose.yml`.
+Three ways, all equivalent:
 
 ```bash
-CLIENT_PORT=3000 docker compose up      # sekali jalan
+CLIENT_PORT=3000 docker compose up      # one-off
 ```
 
 ```bash
-cp .env.example .env                    # permanen; .env nggak ikut ke git
-# isi CLIENT_PORT=3000
+cp .env.example .env                    # persistent; .env is gitignored
+# set CLIENT_PORT=3000
 docker compose up
 ```
 
 ```bash
-docker compose --env-file prod.env up   # file env sendiri per environment
+docker compose --env-file prod.env up   # a separate env file per environment
 ```
 
-Mau ngecek dulu tanpa jalanin apa-apa? `docker compose config`, lihat baris
-`published`.
+Want to check before running anything? `docker compose config`, look at the
+`published` line.
 
-Yang berubah cuma port di sisi host. nginx di dalam container tetap di 80, dan
-`/ws` ikut pindah sendiri karena client pakai origin yang sama.
+Only the host-side port changes. nginx inside the container stays on 80, and
+`/ws` follows along on its own because the client uses the same origin.
 
-Build context dua image ini adalah root repo, bukan foldernya masing-masing,
-soalnya dua-duanya pakai workspace `@chess/shared`.
+The build context for both images is the repo root, not their own folders, since
+both depend on the `@chess/shared` workspace.
 
-Image server nggak punya tahap compile sama sekali — Node 24 jalanin
-TypeScript-nya langsung lewat type stripping.
+The server image has no compile step at all — Node 24 runs its TypeScript
+directly via type stripping.
 
-## Release
 
-Push tag versi bakal nge-build dan push dua image ke GitHub Container Registry:
+## Deploying to a server
+
+The published images run as-is — no repo clone, no build:
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0
+docker network create chess
+
+docker run -d --name chess-server --network chess --restart unless-stopped \
+  ghcr.io/yunnie-pin/chess-js/server:1.0.0
+
+docker run -d --name chess-client --network chess --restart unless-stopped \
+  -p 80:80 ghcr.io/yunnie-pin/chess-js/client:1.0.0
 ```
 
+The client container must be able to reach the server container by the hostname
+`server`, since that's what nginx proxies `/ws` to. Either name it
+`--name server`, or add `--network-alias server`.
+
+Pin a version tag rather than `latest`: on a server, `latest` means you can't
+tell what's actually running, and rollbacks turn into guesswork.
+
+If the package is still private, log in once on that machine:
+
+```bash
+echo $GHCR_TOKEN | docker login ghcr.io -u <username> --password-stdin
+# token: GitHub → Settings → Developer settings → PAT, scope read:packages
 ```
-ghcr.io/yunnie-pin/chess-js/server:1.0.0   :1.0   :1   :latest
-ghcr.io/yunnie-pin/chess-js/client:1.0.0   :1.0   :1   :latest
-```
 
-Namanya huruf kecil semua karena ghcr nolak huruf besar, sedangkan nama repo
-GitHub boleh ada kapitalnya. Yang nurunin `docker/metadata-action`, jadi nggak
-ada yang perlu diutak-atik manual.
+With a reverse proxy (Caddy/Traefik/nginx) in front for TLS, publish to
+`-p 127.0.0.1:8080:80` instead so the container isn't exposed straight to the
+internet.
 
-[`release.yml`](.github/workflows/release.yml) manggil ulang
-[`ci.yml`](.github/workflows/ci.yml) duluan — tag nggak otomatis berarti kodenya
-sehat, jadi typecheck, test, sama build harus lolos sebelum ada yang nyampe ke
-registry. Image dibuat buat `linux/amd64` dan `linux/arm64`. Auth-nya pakai
-`GITHUB_TOKEN` bawaan, nggak perlu nyiapin secret.
-
-Package yang baru pertama kali dipush itu private. Buat ngebukanya: tab
-**Packages** di halaman repo → pilih packagenya → *Package settings* →
-*Change visibility*.
-
-## Kapan test jalan
-
-[`ci.yml`](.github/workflows/ci.yml) ngejalanin `npm ci`, typecheck, semua test,
-sama build client di:
-
-- tiap **PR yang nargetin `main`** — sebelum di-merge;
-- tiap **push ke `main`** — termasuk commit hasil merge PR, karena merge itu
-  memang menghasilkan push ke `main`;
-- tiap **tag release**, lewat panggilan ulang dari `release.yml`.
-
-Jadi merge ke `main` selalu kecek dua kali: di PR-nya, terus di commit hasil
-merge-nya.
-
-Tapi workflow cuma ngasih tanda merah, bukan ngeblokir. Biar PR yang gagal test
-beneran nggak bisa di-merge, nyalain di **Settings → Branches → Add rule** buat
-`main`: *Require status checks to pass*, terus pilih check yang namanya
-`verify`.
+**Important if you're on HTTPS:** a page served over `https://` must use `wss://`,
+and the client already handles that itself — it reads
+`window.location.protocol`. But your reverse proxy has to forward the `Upgrade`
+and `Connection` headers for the `/ws` path, otherwise the WebSocket gets
+rejected and online play breaks while local play keeps working — a confusing
+symptom to debug.
 
 
-## Struktur
+## Layout
 
 ```
-shared/     Dipakai bareng client dan server — bukan punya salah satunya
-  src/chess.ts       Papan, generate langkah, SAN, status permainan
-  src/zobrist.ts     Tabel hash posisi
+shared/     Shared by client and server — owned by neither
+  src/chess.ts       Board, move generation, SAN, game status
+  src/zobrist.ts     Position hash tables
   src/tt.ts          Transposition table
   src/ai.ts          Negamax + alpha-beta + quiescence + TT
-  src/protocol.ts    Kontrak pesan WebSocket + guard buat dua arah
-  src/types.ts       Tipe dasar (Piece, Move, GameStatus, …)
+  src/protocol.ts    WebSocket message contract + guards for both directions
+  src/types.ts       Core types (Piece, Move, GameStatus, …)
 
-server/     Server multiplayer
-  src/room.ts        Satu match: kursi, validasi langkah, resign
-  src/rooms.ts       Registry room, kode acak, bersih-bersih room mati
+server/     Multiplayer server
+  src/room.ts        One match: seats, move validation, resign
+  src/rooms.ts       Room registry, random codes, cleanup of dead rooms
   src/index.ts       HTTP + WebSocket, broadcast, heartbeat
 
-client/     UI Vue 3
-  src/composables/useChessGame.ts    Main lokal (dua pemain / lawan komputer)
-  src/composables/useOnlineGame.ts   Client multiplayer
-  src/engine/ai.worker.ts            Bungkus Web Worker buat AI
-  src/components/                    Papan, lobby, panel room, riwayat, …
+client/     Vue 3 UI
+  src/composables/useChessGame.ts    Local play (two players / vs computer)
+  src/composables/useOnlineGame.ts   Multiplayer client
+  src/engine/ai.worker.ts            Web Worker wrapper for the AI
+  src/components/                    Board, lobby, room panel, move list, …
 ```
 
 ## Multiplayer
 
-Bikin room, share kode empat huruf, lawan masuk pakai kode itu. Orang ketiga
-yang masuk jadi penonton, bukan ditolak.
+Create a room, share the four-letter code, your opponent joins with it. A third
+person who joins becomes a spectator rather than being turned away.
 
-**Servernya yang megang source of truth.** Client nggak pernah mutusin sendiri sebuah
-langkah itu sah atau nggak. Dia cuma ngirim maunya, server yang ngecek pakai
-engine yang sama persis, terus nyiarin state barunya. Client yang telat, beda
-versi, atau udah dioprek nggak bisa bikin papan dua pemain jadi beda isi — kalau
-dia ngirim langkah ngawur, server nolak terus langsung ngirim state yang
-sebenernya biar client-nya balik sinkron.
+**The server is the source of truth.** The client never decides on its own
+whether a move is legal. It just sends what it wants, the server checks with the
+exact same engine, then broadcasts the new state. A client that's behind, on a
+different version, or tampered with can't make the two boards disagree — if it
+sends a bogus move the server rejects it and immediately sends back the real
+state to pull the client back in sync.
 
-**Nutup tab bukan berarti kalah.** Tiap pemain pegang token yang disimpen di
-`localStorage`. Nyambung lagi pakai token yang sama bakal ngerebut kursi dan
-papan yang sama, jadi refresh atau internet sempet putus nggak bikin orang
-kelempar dari match yang lagi jalan. Client-nya juga nyambung ulang sendiri
-dengan jeda yang makin lama makin panjang.
+**Closing the tab doesn't mean losing.** Every player holds a token stored in
+`localStorage`. Reconnecting with the same token reclaims the same seat and the
+same board, so a refresh or a brief network drop doesn't throw anyone out of a
+running match. The client also reconnects on its own with a backoff delay.
 
-**Kode room** pakai alfabet tanpa karakter yang gampang ketuker (nggak ada 0/O,
-1/I/L, 5/S, 8/B), soalnya kode itu emang buat dibacain atau diketik ulang orang.
+**Room codes** use an alphabet without easily-confused characters (no 0/O, 1/I/L,
+5/S, 8/B), because those codes are meant to be read aloud or retyped by hand.
 
-## Aturan dan main lokal
+## Rules and local play
 
-Aturan FIDE lengkap: rokade termasuk larangan lewat petak yang keancem,
-en passant, promosi pakai pilihan bidak, skak, skakmat, dan semua kondisi remis
-(stalemate, materi nggak cukup, posisi ngulang tiga kali, aturan 50 langkah).
+Full FIDE rules: castling including the ban on passing through an attacked
+square, en passant, promotion with a piece picker, check, checkmate, and every
+draw condition (stalemate, insufficient material, threefold repetition, the
+fifty-move rule).
 
-Klik dua petak atau drag bidaknya — dua-duanya jalan di desktop maupun layar
-sentuh. Lawan komputer punya lima level Elo, dengan jeda balasan minimal 500 ms biar
-langkah lawan nggak muncul mendadak.
+Click two squares or drag the piece — both work on desktop and on touch screens.
+The computer opponent has five Elo levels, with a 500 ms minimum reply delay so
+its moves don't pop in out of nowhere.
 
-Shortcut: `←` undo, `F` puter papan, `Esc` batal pilih.
+Shortcuts: `←` undo, `F` flip the board, `Esc` clear the selection.
 
-## Catatan teknis
+## Technical notes
 
-**Representasi papan.** Array 64 elemen; index 0 itu a8 dan 63 itu h1, jadi
-`rank = index >> 3` dan `file = index & 7`. Langkah di-generate pseudo-legal
-dulu, baru disaring lewat `makeMove` / `undoMove`.
+**Board representation.** A 64-element array; index 0 is a8 and 63 is h1, so
+`rank = index >> 3` and `file = index & 7`. Moves are generated pseudo-legally
+first, then filtered through `makeMove` / `undoMove`.
 
-**Engine-nya bener nggak?** `shared/test/perft.test.ts` nyocokin jumlah node
-sama angka acuan chessprogramming.org buat lima posisi standar, termasuk
-Kiwipete, sampai 197.281 posisi. Ini yang nangkep bug halus di rokade,
-en passant, sama pin — jenis bug yang biasanya lolos kalau cuma dites manual.
+**Is the engine actually correct?** `shared/test/perft.test.ts` matches node
+counts against the chessprogramming.org reference numbers for five standard
+positions, Kiwipete included, up to 197,281 positions. That's what catches the
+subtle bugs in castling, en passant, and pins — the kind that slip past manual
+testing.
 
-**Level lawan pakai Elo, bukan kedalaman.** Bikin mesin lemah dengan mencari
-lebih dangkal doang itu hasilnya aneh — salahnya seragam dan nggak mirip
-manusia. Jadi tiap level punya dua tombol: kedalaman/waktu, plus `errorMargin`
-yaitu seberapa buruk langkah yang masih boleh dipilih. Mesin yang mencari cukup
-dalam tapi sesekali ambil langkah kedua terbaik salahnya jauh lebih manusiawi —
-kadang kelewatan taktik, bukan tiba-tiba nggantung menteri.
+**Levels are Elo, not search depth.** Making an engine weak purely by searching
+shallower feels wrong — its mistakes are uniform and nothing like a human's. So
+each level has two knobs: depth/time, plus `errorMargin`, which is how bad a move
+it's still allowed to pick. An engine that searches deep enough but occasionally
+takes the second-best move errs much more like a person — it misses tactics
+instead of suddenly hanging its queen.
 
-Diukur pakai pembanding tetap (analisis kedalaman 4 di posisi yang sama),
-rata-rata kerugian per langkah:
+Measured against a fixed reference (depth-4 analysis of the same position),
+average loss per move:
 
 ```
-400   Pemula     depth 1    129,6 cp
-800   Kasual     depth 2     69,9 cp
-1200  Menengah   depth 3     19,4 cp
-1600  Kuat       depth 4      8,1 cp
-2000  Maksimal   depth 6      0,0 cp
+400   Beginner   depth 1    129.6 cp   <- default
+800   Casual     depth 2     69.9 cp
+1200  Medium     depth 3     19.4 cp
+1600  Strong     depth 4      8.1 cp
+2000  Maximum    depth 6      0.0 cp
 ```
 
-Pembandingnya wajib tetap. Awalnya tiap level diukur pakai pencariannya sendiri,
-dan hasilnya nyesatin: level 400 kelihatan cuma rugi 33 cp — lebih kecil dari
-level 800 — padahal langkahnya jelas lebih buruk. Sebabnya pencarian kedalaman 1
-memang cuma lihat sebaran skor yang sempit, jadi "kerugian" relatifnya kecil.
+The reference has to be fixed. At first each level was measured against its own
+search, and the result was misleading: level 400 looked like it only lost 33 cp —
+less than level 800 — even though its moves are clearly worse. A depth-1 search
+simply sees a narrow spread of scores, so its relative "loss" comes out small.
 
-**Angka Elo-nya perkiraan**, belum dikalibrasi lewat pertandingan lawan mesin
-ber-rating. Urutannya dijamin naik, tapi jangan anggap 1200 di sini persis sama
-dengan 1200 Lichess. Semua angkanya ada di satu tabel `STRENGTH_PROFILES` di
-[ai.ts](shared/src/ai.ts) kalau mau disetel.
+**The Elo numbers are estimates**, not calibrated by playing rated engines. The
+ordering is guaranteed to go up, but don't read 1200 here as exactly 1200 on
+Lichess. Every number lives in one `STRENGTH_PROFILES` table in
+[ai.ts](shared/src/ai.ts) if you want to tune it.
 
-**Zobrist hashing.** Kunci posisi dulunya string hasil `board.join(',')`,
-dibangun ulang tiap `makeMove`. Diukur pakai perft, itu makan **70% waktu
-engine**. Sekarang kuncinya XOR bilangan yang di-update inkremental — O(1) per
-langkah, bukan O(64) — dan hasilnya engine jadi **2,3x lebih cepat**.
+**Zobrist hashing.** The position key used to be a string from
+`board.join(',')`, rebuilt on every `makeMove`. Measured with perft, that ate
+**70% of engine time**. Now the key is an XOR of numbers updated incrementally —
+O(1) per move instead of O(64) — which made the engine **2.3x faster**.
 
-Update inkremental itu gampang salah dan gejalanya baru muncul jauh belakangan,
-jadi `zobrist.test.ts` menjalankan seluruh pohon langkah sampai kedalaman 4 dan
-membandingkan hash inkremental dengan hitung-ulang dari nol di **setiap** posisi,
-termasuk setelah `undoMove`.
+Incremental updates are easy to get wrong and the symptoms show up much later, so
+`zobrist.test.ts` walks the entire move tree to depth 4 and compares the
+incremental hash against a from-scratch recomputation at **every** position,
+including after `undoMove`.
 
-**Transposition table.** Posisi yang sama sering dicapai lewat urutan langkah
-berbeda; tanpa tabel, tiap jalur dihitung ulang. Disimpan di typed array paralel
-(2^18 entri, ~4,5 MB) supaya nggak bikin ratusan ribu objek per pencarian.
-Entri diverifikasi pakai kunci 64-bit penuh, bukan cuma indeks slot-nya — dua
-posisi beda bisa jatuh ke slot yang sama, dan memakai hasil yang salah jauh
-lebih buruk daripada sekadar kehilangan cache hit.
+**Transposition table.** The same position is often reached through different
+move orders; without a table each path is recomputed. Stored in parallel typed
+arrays (2^18 entries, ~4.5 MB) to avoid creating hundreds of thousands of objects
+per search. Entries are verified against the full 64-bit key, not just the slot
+index — two different positions can land in the same slot, and using the wrong
+result is far worse than merely missing a cache hit.
 
-Skor mat disimpan relatif terhadap posisinya, bukan terhadap akar pencarian.
-Kalau nggak, "mat dalam 3" yang ketemu di kedalaman 5 bakal kebaca "mat dalam 3"
-juga waktu posisi yang sama muncul di kedalaman 2.
+Mate scores are stored relative to their own position, not to the search root.
+Otherwise a "mate in 3" found at depth 5 would read as "mate in 3" again when the
+same position turns up at depth 2.
 
-Gabungan keduanya: level **ahli naik dari kedalaman 5 ke 6**, dan selesainya
-malah lebih cepat (2,9 dtk vs 4,0 dtk sebelumnya).
+Together: the top level **went from depth 5 to depth 6**, and finishes faster
+than before (2.9 s vs 4.0 s).
 
-**Kenapa engine-nya di `shared/`.** Server wajib validasi tiap langkah, jadi
-aturan catur bukan punya client. Kalau dicopy ke dua tempat, cepat atau lambat
-dua-duanya bakal beda — dan bedanya baru ketahuan pas match beneran jalan.
-`protocol.ts` di situ juga alasannya sama: kalau salah satu sisi ngubah bentuk
-pesan, yang gagal itu `npm run typecheck`, bukan pemainnya.
+**Why the engine lives in `shared/`.** The server has to validate every move, so
+the rules of chess don't belong to the client. Copy them into two places and
+sooner or later the two will diverge — and you'd only find out during a real
+match. `protocol.ts` is there for the same reason: if one side changes a message
+shape, what breaks is `npm run typecheck`, not the players.
 
-**Kenapa `Position` nggak reaktif.** Search AI manggil `makeMove`/`undoMove`
-ratusan ribu kali. Kalau dibungkus proxy Vue, lemotnya bisa berkali-kali lipat.
-Jadi papannya dimutasi langsung, terus ada counter `version` yang naik tiap
-posisi berubah — semua `computed` nempel ke counter itu.
+**Why `Position` isn't reactive.** The AI search calls `makeMove`/`undoMove`
+hundreds of thousands of times. Wrapping it in a Vue proxy would slow that down
+several times over. So the board is mutated directly and a `version` counter
+ticks whenever the position changes — every `computed` hangs off that counter.
 
-**Web Worker.** Search AI nge-block thread tempat dia jalan, jadi ditaruh di
-worker biar papannya tetep responsif. Kalau environment-nya nggak ngebolehin
-module worker, client otomatis pindah ke jalur sinkron.
+**Web Worker.** The AI search blocks whatever thread it runs on, so it lives in a
+worker to keep the board responsive. If the environment disallows module workers,
+the client falls back to a synchronous path automatically.
 
 ## Testing
 
 ```
-shared/   38 test   perft, SAN, remis, konsistensi hash Zobrist, tangga Elo
-server/   28 test   aturan room, kursi, token; plus integrasi WebSocket beneran
-client/   25 test   state main lokal, dan end-to-end lawan server asli
+shared/   38 tests   perft, SAN, draws, Zobrist hash consistency, the Elo ladder
+server/   28 tests   room rules, seats, tokens; plus real WebSocket integration
+client/   25 tests   local game state, and end-to-end against a real server
 ```
 
-Test server sama client dua-duanya nyalain proses server beneran di port
-sendiri, terus ngobrol lewat WebSocket asli — bukan mock. Cara ini yang nemuin
-bug kursi nggak ikut ketuker abis "main lagi", yang nggak kelihatan pas tiap
-bagian dites sendiri-sendiri.
+The server and client tests both spin up a real server process on their own port
+and talk over a real WebSocket — no mocks. That's how the bug where seats didn't
+swap after a rematch got caught; it was invisible when each piece was tested on
+its own.
+
+## Contributing
+
+Issues and PRs are welcome: <https://github.com/Yunnie-pin/chess-js>
+
+Before opening a PR, run `npm test` and `npm run typecheck` — CI runs exactly
+those, so it saves a round trip.

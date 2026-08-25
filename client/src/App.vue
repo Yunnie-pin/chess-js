@@ -9,6 +9,7 @@ import MariPortrait from './components/MariPortrait.vue'
 import MoveHistory from './components/MoveHistory.vue'
 import OnlineLobby from './components/OnlineLobby.vue'
 import PromotionDialog from './components/PromotionDialog.vue'
+import RepoLink from './components/RepoLink.vue'
 import RoomPanel from './components/RoomPanel.vue'
 import { useChessGame } from './composables/useChessGame.ts'
 import { useOnlineGame } from './composables/useOnlineGame.ts'
@@ -363,6 +364,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       </aside>
     </main>
 
+    <footer class="page-footer">
+      <RepoLink />
+    </footer>
+
     <PromotionDialog
       v-if="pendingPromotionColor"
       :color="pendingPromotionColor"
@@ -386,6 +391,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   display: flex;
   align-items: center;
   gap: 0.85rem;
+}
+
+/* Di luar panel: melintang selebar halaman, isinya di tengah. */
+.page-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 2.25rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
 }
 
 .app__header {

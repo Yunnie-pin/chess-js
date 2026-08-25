@@ -15,7 +15,7 @@ import type { TTHit } from './tt.ts'
 export const ELO_LEVELS = [400, 800, 1200, 1600, 2000] as const
 export type EloRating = (typeof ELO_LEVELS)[number]
 
-export const DEFAULT_ELO: EloRating = 1200
+export const DEFAULT_ELO: EloRating = 400
 
 /** Satu langkah di akar beserta skornya — dasar pemilihan langkah per level. */
 export interface RootMove {
