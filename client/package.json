@@ -1,0 +1,24 @@
+{
+  "name": "client",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Antarmuka catur: Vue 3 + Vite, main sendiri, lawan komputer, atau online",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@chess/shared": "*",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vue-tsc": "^2.2.0"
+  }
+}

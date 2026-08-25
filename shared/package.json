@@ -1,0 +1,16 @@
+{
+  "name": "@chess/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aturan catur, AI, dan protokol jaringan yang dipakai bersama oleh fe dan be",
+  "exports": {
+    "./chess": "./src/chess.ts",
+    "./ai": "./src/ai.ts",
+    "./types": "./src/types.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\""
+  }
+}

@@ -1,0 +1,119 @@
+/**
+ * Palet diambil dari desain Iochi Mari (Blue Archive), anggota Sisterhood:
+ * jubah putih gading, skapulir dan kerudung hitam, trim emas di hampir setiap
+ * tepi, rambut oranye panjang, dan mata biru langit yang senada dengan pita
+ * pada harness salibnya.
+ *
+ * SELURUH warna aplikasi didefinisikan di sini. Komponen tidak boleh menulis
+ * nilai warna langsung — supaya mengganti tema cukup menyentuh satu berkas.
+ */
+
+:root {
+  /* --- Warna sumber, langsung dari desain karakternya --- */
+  --mari-gold: #ddb65c;
+  --mari-gold-bright: #efcb77;
+  --mari-orange: #e8853f;
+  --mari-sky: #77c0e8;
+  --mari-ivory: #f6f1e7;
+  --mari-black: #1a1611;
+
+  /* --- Permukaan: skapirir & kerudung hitam, dihangatkan sedikit --- */
+  --bg: #141109;
+  --panel: #1f1a12;
+  --surface: #292217;
+  --surface-hover: #352c1e;
+  --border: #40372a;
+
+  /* --- Teks: jubah putih gading --- */
+  --text: var(--mari-ivory);
+  --text-muted: #a5977c;
+
+  /* --- Aksen: trim emas --- */
+  --accent: var(--mari-gold);
+  --accent-hover: var(--mari-gold-bright);
+  --accent-soft: rgb(221 182 92 / 0.14);
+  /* Teks di atas bidang beraksen emas — harus gelap, bukan putih. */
+  --on-accent: #241c0d;
+
+  /* --- Nada status --- */
+  --danger: #e2604a;
+  --danger-text: #f2a893;
+  --danger-soft: rgb(226 96 74 / 0.12);
+  --danger-line: rgb(226 96 74 / 0.3);
+
+  --gold-text: #f0d492;
+  --sky: var(--mari-sky);
+  --sky-text: #aedcf3;
+  --sky-soft: rgb(119 192 232 / 0.12);
+  --sky-line: rgb(119 192 232 / 0.28);
+
+  --orange: var(--mari-orange);
+
+  /* --- Papan: jubah putih lawan skapulir hitam --- */
+  --square-light: #efe5d1;
+  --square-dark: #4d4133;
+  /* Sorotan langkah terakhir memakai emas; petak terpilih memakai biru matanya. */
+  --highlight-last: rgb(221 182 92 / 0.45);
+  --highlight-selected: rgb(119 192 232 / 0.34);
+  --hint: rgb(26 22 17 / 0.34);
+
+  /* --- Bidak --- */
+  --piece-light: #fbf7ee;
+  --piece-light-stroke: #33291a;
+  --piece-dark: #2b241a;
+  --piece-dark-stroke: #14100a;
+  /* Versi kecil untuk daftar bidak tertangkap. */
+  --piece-light-small: #e9e1d2;
+  --piece-dark-small: #4a4032;
+
+  --radius: 0.75rem;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'Consolas', monospace;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  /* Cahaya emas hangat dari atas, seperti pendar halo-nya. */
+  background: radial-gradient(1100px 560px at 50% -12%, #2e2413 0%, var(--bg) 62%);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+select,
+input {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-hover);
+}
