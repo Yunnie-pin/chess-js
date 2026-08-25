@@ -245,3 +245,126 @@ test('undo pada mode lawan komputer membatalkan sepasang langkah', () =>
     assert.equal(game.turn.value, 'w')
     assert.equal(game.thinking.value, false)
   }))
+
+test('lawan terkunci begitu pemain menjalankan langkah pertamanya', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    assert.equal(game.setupLocked.value, false, 'papan masih kosong, lawan bebas diganti')
+
+    click(game, 'e2', 'e4')
+    assert.equal(game.setupLocked.value, true, 'pemain sudah jalan, lawan terkunci')
+
+    await waitForReply(game)
+    assert.equal(game.setupLocked.value, true, 'tetap terkunci setelah komputer menjawab')
+  }))
+
+test('lawan masih bebas diganti walau komputer sudah jalan lebih dulu', () =>
+  withGame(async (game) => {
+    // Kasus inilah yang menentukan bentuk aturannya. Pemain memegang hitam, jadi
+    // papan sudah punya satu langkah sebelum ia sempat menyentuh apa pun. Kalau
+    // kuncinya dipasang pada langkah pertama PAPAN, lawan tidak akan pernah bisa
+    // diganti: "Permainan baru" pun langsung disusul langkah komputer.
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('b')
+    await nextTick()
+    await waitForReply(game)
+
+    assert.equal(game.history.value.length, 1, 'komputer sudah membuka permainan')
+    assert.equal(game.history.value[0].color, 'w')
+    assert.equal(game.setupLocked.value, false, 'pemain belum jalan, jadi belum terkunci')
+
+    click(game, 'e7', 'e5')
+    assert.equal(game.setupLocked.value, true)
+  }))
+
+test('membatalkan langkah sampai habis membuka kunci lawan lagi', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'd2', 'd4')
+    await waitForReply(game)
+    assert.equal(game.setupLocked.value, true)
+
+    game.undo()
+    assert.equal(game.history.value.length, 0)
+    assert.equal(game.setupLocked.value, false, 'tidak ada langkah pemain tersisa')
+  }))
+
+test('permainan baru membuka kunci lawan', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e2', 'e4')
+    assert.equal(game.setupLocked.value, true)
+
+    game.reset()
+    assert.equal(game.setupLocked.value, false)
+  }))
+
+test('mode dua pemain tidak punya lawan untuk dikunci', () =>
+  withGame((game) => {
+    click(game, 'e2', 'e4')
+    click(game, 'e7', 'e5')
+    assert.equal(game.history.value.length, 2)
+    assert.equal(game.setupLocked.value, false)
+  }))
+
+test('warna tidak bisa ditukar setelah pertandingan berjalan', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+    assert.equal(game.humanColor.value, 'w')
+
+    click(game, 'e2', 'e4')
+    await waitForReply(game)
+    assert.equal(game.setupLocked.value, true)
+
+    const before = game.history.value.length
+    game.playAs('b')
+
+    // Ditolak di composable, bukan cuma di tombol: papannya tidak boleh
+    // berpindah tangan di tengah jalan.
+    assert.equal(game.humanColor.value, 'w', 'pemain tetap memegang putih')
+    assert.equal(game.history.value.length, before, 'tidak ada langkah tambahan')
+  }))
+
+test('warna masih bisa dipilih sebelum pemain jalan', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    game.playAs('b')
+    assert.equal(game.humanColor.value, 'b', 'papan masih kosong, warna bebas dipilih')
+  }))
+
+test('permainan baru mengembalikan kebebasan memilih warna', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e2', 'e4')
+    await waitForReply(game)
+    game.playAs('b')
+    assert.equal(game.humanColor.value, 'w', 'masih terkunci')
+
+    game.reset()
+    game.playAs('b')
+    assert.equal(game.humanColor.value, 'b')
+  }))

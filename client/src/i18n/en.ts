@@ -31,7 +31,7 @@ export const en: Messages = {
   'status.opponentInCheck': 'Your opponent is in check!',
   'status.yourTurn': 'Your turn',
   'status.waitingMove': 'Waiting for their move…',
-  'status.thinking': 'The computer is thinking…',
+  'status.thinking': '{name} is thinking…',
   'status.sideInCheck': '{color} is in check!',
   'status.sideTurn': '{color} to move',
 
@@ -45,7 +45,7 @@ export const en: Messages = {
   'player.you': 'you',
   'player.disconnected': 'disconnected',
   'player.human': 'You ({color})',
-  'player.computer': 'Computer ({color})',
+  'player.computer': '{name} ({color})',
   'player.turnBadge': 'to move',
 
   'board.ariaLabel': 'Chess board',
@@ -56,6 +56,8 @@ export const en: Messages = {
   'controls.twoPlayers': 'Two players',
   'controls.strength': 'Opponent strength',
   'controls.eloNote': 'These Elo numbers are estimates, not calibrated by rated play.',
+  'controls.setupLocked':
+    'Opponent and colour are locked while a game is in progress. Start a new game to change them.',
   'controls.playAs': 'You play as',
   'controls.showHints': 'Show move hints',
   'controls.newGame': 'New game',

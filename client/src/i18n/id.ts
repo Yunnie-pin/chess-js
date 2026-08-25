@@ -41,7 +41,7 @@ export const id = {
   'status.opponentInCheck': 'Lawan sedang skak!',
   'status.yourTurn': 'Giliran Anda',
   'status.waitingMove': 'Menunggu langkah lawan…',
-  'status.thinking': 'Komputer sedang berpikir…',
+  'status.thinking': '{name} sedang berpikir…',
   'status.sideInCheck': '{color} sedang skak!',
   'status.sideTurn': 'Giliran {color}',
 
@@ -57,7 +57,8 @@ export const id = {
   'player.you': 'Anda',
   'player.disconnected': 'terputus',
   'player.human': 'Anda ({color})',
-  'player.computer': 'Komputer ({color})',
+  /* Sisi mesin diberi nama karakternya; strukturnya tetap bisa diatur per bahasa. */
+  'player.computer': '{name} ({color})',
   'player.turnBadge': 'giliran',
 
   // Papan
@@ -70,12 +71,17 @@ export const id = {
   'controls.twoPlayers': 'Dua pemain',
   'controls.strength': 'Kekuatan lawan',
   'controls.eloNote': 'Angka Elo ini perkiraan, belum dikalibrasi lewat pertandingan.',
+  'controls.setupLocked':
+    'Lawan dan warna terkunci selama pertandingan berjalan. Mulai permainan baru untuk menggantinya.',
   'controls.playAs': 'Anda bermain sebagai',
   'controls.showHints': 'Tampilkan petunjuk langkah',
   'controls.newGame': 'Permainan baru',
   'controls.undo': 'Batalkan langkah',
 
-  // Nama level AI — padanan `STRENGTH_PROFILES[…].label` di shared/src/ai.ts
+  /*
+   * Keterangan tingkat, BUKAN nama lawannya. Nama karakter adalah nama diri —
+   * tidak diterjemahkan — dan tinggal di `src/opponents.ts`.
+   */
   'level.400': 'Pemula',
   'level.800': 'Kasual',
   'level.1200': 'Menengah',

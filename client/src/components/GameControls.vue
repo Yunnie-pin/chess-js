@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { ELO_LEVELS } from '@chess/shared/ai'
 import type { EloRating } from '@chess/shared/ai'
 import { useI18n } from '../i18n/index.ts'
+import OpponentPicker from './OpponentPicker.vue'
 import type { GameMode } from '../composables/useChessGame.ts'
 import type { Color } from '@chess/shared/types'
 
@@ -13,7 +13,13 @@ const mode = defineModel<GameMode>('mode', { required: true })
 const elo = defineModel<EloRating>('elo', { required: true })
 const showHints = defineModel<boolean>('showHints', { required: true })
 
-defineProps<{ humanColor: Color | null; canUndo: boolean; busy: boolean }>()
+defineProps<{
+  humanColor: Color | null
+  canUndo: boolean
+  busy: boolean
+  /** Pertandingan sudah berjalan, jadi lawannya tidak boleh diganti lagi. */
+  setupLocked: boolean
+}>()
 
 const emit = defineEmits<{
   reset: []
@@ -32,16 +38,11 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
 ])
 
 /*
- * Nama level diambil dari kamus klien, bukan dari `STRENGTH_PROFILES[…].label`
- * di shared: profil itu juga dipakai server dan tes, dan tidak tahu-menahu soal
- * bahasa yang sedang dipilih pemain. Angka Elo-nya sendiri tetap dari shared.
+ * Daftar lawannya sendiri hidup di OpponentPicker; di sini hanya disambungkan.
+ * Nama karakter dan warnanya ada di `src/opponents.ts`, keterangan tingkatnya
+ * di kamus i18n, dan kekuatan sesungguhnya tetap di `STRENGTH_PROFILES` milik
+ * shared — tiga hal berbeda yang memang tidak perlu saling tahu.
  */
-const LEVELS = computed(() =>
-  ELO_LEVELS.map((rating) => ({
-    value: rating,
-    label: `${rating} — ${t(`level.${rating}`)}`
-  }))
-)
 </script>
 
 <template>
@@ -64,13 +65,9 @@ const LEVELS = computed(() =>
 
     <template v-if="mode === 'lawan-komputer'">
       <div class="field">
-        <label class="field__label" for="elo">{{ t('controls.strength') }}</label>
-        <select id="elo" v-model="elo" class="select">
-          <option v-for="option in LEVELS" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
-        <p class="note">{{ t('controls.eloNote') }}</p>
+        <OpponentPicker v-model="elo" :locked="setupLocked" />
+        <!-- Saat terkunci, keterangan kuncinya yang berguna; catatan Elo bisa menunggu. -->
+        <p v-if="!setupLocked" class="note">{{ t('controls.eloNote') }}</p>
       </div>
 
       <div class="field">
@@ -80,6 +77,7 @@ const LEVELS = computed(() =>
             type="button"
             class="segmented__item"
             :class="{ 'segmented__item--on': humanColor === 'w' }"
+            :disabled="setupLocked"
             @click="emit('playAs', 'w')"
           >
             {{ t('color.w') }}
@@ -88,12 +86,17 @@ const LEVELS = computed(() =>
             type="button"
             class="segmented__item"
             :class="{ 'segmented__item--on': humanColor === 'b' }"
+            :disabled="setupLocked"
             @click="emit('playAs', 'b')"
           >
             {{ t('color.b') }}
           </button>
         </div>
       </div>
+
+      <!-- Satu keterangan untuk satu kunci, ditaruh setelah kedua hal yang
+           dikuncinya — bukan diulang dua kali di atas masing-masing. -->
+      <p v-if="setupLocked" class="note note--lock">{{ t('controls.setupLocked') }}</p>
     </template>
 
     <label class="switch">
@@ -154,8 +157,17 @@ const LEVELS = computed(() =>
   transition: background 0.15s, color 0.15s;
 }
 
-.segmented__item:hover {
+.segmented__item:hover:not(:disabled) {
   color: var(--text);
+}
+
+.segmented__item:disabled {
+  cursor: not-allowed;
+}
+
+/* Yang sedang dipakai tetap terbaca penuh; hanya pilihan lain yang meredup. */
+.segmented__item:disabled:not(.segmented__item--on) {
+  opacity: 0.42;
 }
 
 .segmented__item--on {
@@ -171,15 +183,12 @@ const LEVELS = computed(() =>
   line-height: 1.35;
 }
 
-.select {
-  padding: 0.5rem 0.6rem;
-  font: inherit;
-  font-size: 0.85rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  color: var(--text);
-  cursor: pointer;
+/* Keterangan kunci menjelaskan dua kontrol di atasnya sekaligus; diberi garis
+   tepi supaya terbaca sebagai sebab, bukan sebagai catatan kaki lepas. */
+.note--lock {
+  margin-top: 0.15rem;
+  padding-left: 0.55rem;
+  border-left: 2px solid var(--border);
 }
 
 .switch {

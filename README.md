@@ -25,7 +25,7 @@ For local play only (vs computer / two players) you don't need the server —
 | `npm run dev`        | Server + client together                  |
 | `npm run dev:server` | Multiplayer server only                   |
 | `npm run dev:client` | UI only                                   |
-| `npm test`           | 101 tests across the three workspaces     |
+| `npm test`           | 124 tests across the three workspaces     |
 | `npm run typecheck`  | Strict TypeScript, Vue templates included |
 | `npm run build`      | Build the client into `client/dist/`      |
 | `npm start`          | Run the server for production             |
@@ -138,6 +138,8 @@ client/     Vue 3 UI
   src/composables/useOnlineGame.ts   Multiplayer client
   src/engine/ai.worker.ts            Web Worker wrapper for the AI
   src/i18n/                          Indonesian and English text
+  src/opponents.ts                   Characters and palettes per Elo level
+  src/theme.ts                       Applies the active opponent's palette
   src/components/                    Board, lobby, room panel, move list, …
 ```
 
@@ -173,6 +175,29 @@ The computer opponent has five Elo levels, with a 500 ms minimum reply delay so
 its moves don't pop in out of nowhere.
 
 Shortcuts: `←` undo, `F` flip the board, `Esc` clear the selection.
+
+## Opponents
+
+Each strength level is a character, and picking one re-dresses the page — accent,
+board squares, the glow behind the header, the halo, and the portrait:
+
+| Elo  | Opponent        | Level        |
+| ---- | --------------- | ------------ |
+| 400  | Iochi Mari      | Beginner     |
+| 800  | Toki            | Casual       |
+| 1200 | Kisaki          | Intermediate |
+| 1600 | Hayase Yuuka    | Strong       |
+| 2000 | Akeboshi Himari | Maximum      |
+
+Mari stays the host: two-player and online games use her palette, since neither
+has a machine opponent to stand in for.
+
+**Setup happens before the game, not during it.** Both the opponent and the colour
+you play lock as soon as you make your move; "New game" unlocks them, and so does
+undoing back to an empty board. One rule for both, because both break the same
+thing — swapping either mid-game leaves a board that is still legal but no longer
+means anything as a match.
+
 
 ## Language
 
@@ -282,7 +307,7 @@ the client falls back to a synchronous path automatically.
 ```
 shared/   39 tests   perft, SAN, draws, Zobrist hash consistency, the Elo ladder
 server/   28 tests   room rules, seats, tokens; plus real WebSocket integration
-client/   34 tests   local game state, dictionaries, end-to-end against a real server
+client/   57 tests   local game state, dictionaries, opponent palettes, end-to-end
 ```
 
 The server and client tests both spin up a real server process on their own port

@@ -1,20 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 
 import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
 import GameControls from './components/GameControls.vue'
 import LanguageSwitch from './components/LanguageSwitch.vue'
-import MariHalo from './components/MariHalo.vue'
-import MariPortrait from './components/MariPortrait.vue'
 import MoveHistory from './components/MoveHistory.vue'
 import OnlineLobby from './components/OnlineLobby.vue'
+import OpponentHalo from './components/OpponentHalo.vue'
+import OpponentFace from './components/OpponentFace.vue'
+import OpponentPortrait from './components/OpponentPortrait.vue'
 import PromotionDialog from './components/PromotionDialog.vue'
 import RepoLink from './components/RepoLink.vue'
 import RoomPanel from './components/RoomPanel.vue'
 import { useChessGame } from './composables/useChessGame.ts'
 import { useOnlineGame } from './composables/useOnlineGame.ts'
 import { useI18n } from './i18n/index.ts'
+import { HOST, opponentFor, type Opponent } from './opponents.ts'
+import { applyTheme } from './theme.ts'
 import { resolveServerUrl } from './net/serverUrl.ts'
 import { opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
@@ -33,6 +36,21 @@ const colorName = (color: Color): string => t(`color.${color}`)
 const endMessage = (reason: GameEndReason): string => t(`end.${reason}`)
 
 const isOnline = computed(() => appMode.value === 'online')
+
+/*
+ * Karakter yang sedang "menemani" halaman: lawan komputer kalau memang sedang
+ * melawan komputer, selain itu Mari — dialah tuan rumahnya. Dua pemain dan
+ * mode online tidak punya lawan mesin, jadi memilihkan wajah untuk keduanya
+ * hanya akan menipu.
+ */
+const host = computed(() =>
+  !isOnline.value && offline.mode.value === 'lawan-komputer'
+    ? opponentFor(offline.elo.value)
+    : HOST
+)
+
+// Warna aksen, papan, dan pendar halaman ikut karakter yang sedang menemani.
+watchEffect(() => applyTheme(host.value.theme))
 
 // Masuk mode online membuka sambungan; keluar menutupnya agar tidak ada socket
 // menganggur yang terus menyambung ulang di latar belakang.
@@ -146,7 +164,7 @@ const statusText = computed(() => {
       ? t('status.checkmateWin', { winner: colorName(state.winner!) })
       : endMessage(state.reason!)
   }
-  if (offline.thinking.value) return t('status.thinking')
+  if (offline.thinking.value) return t('status.thinking', { name: host.value.name })
   const color = colorName(turn.value)
   return state.check ? t('status.sideInCheck', { color }) : t('status.sideTurn', { color })
 })
@@ -173,6 +191,22 @@ const statusTone = computed(() => {
 const topColor = computed<Color>(() => opponent(orientation.value))
 const bottomColor = computed<Color>(() => orientation.value)
 
+/**
+ * Wajah hanya menempel pada sisi yang dimainkan komputer — dan mengikuti sisi
+ * itu, bukan posisi di layar. Biasanya memang papan nama atas, tapi begitu
+ * papan diputar atau pemain memilih hitam, mesinnya pindah ke bawah dan
+ * wajahnya harus ikut. Sisi manusia tidak punya wajah untuk ditempelkan.
+ */
+const faceFor = (color: Color): Opponent | null =>
+  !isOnline.value &&
+  offline.mode.value === 'lawan-komputer' &&
+  color !== offline.humanColor.value
+    ? host.value
+    : null
+
+const topFace = computed(() => faceFor(topColor.value))
+const bottomFace = computed(() => faceFor(bottomColor.value))
+
 function playerLabel(color: Color): string {
   if (isOnline.value) {
     const player = online.roomState.value?.players.find((entry) => entry.seat === color)
@@ -184,7 +218,8 @@ function playerLabel(color: Color): string {
   if (offline.mode.value === 'dua-pemain') return colorName(color)
   return color === offline.humanColor.value
     ? t('player.human', { color: colorName(color) })
-    : t('player.computer', { color: colorName(color) })
+    : // Sisi mesin memakai nama karakternya, bukan kata "Komputer".
+      t('player.computer', { name: host.value.name, color: colorName(color) })
 }
 
 const leadFor = (color: Color): number =>
@@ -234,11 +269,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="app">
-    <MariPortrait />
+    <OpponentPortrait :opponent="host" />
 
     <header class="app__header">
       <div class="brand">
-        <MariHalo />
+        <OpponentHalo :opponent="host" />
         <div>
           <h1 class="app__title">Chess with Mari</h1>
           <p class="app__subtitle">{{ t('app.subtitle') }}</p>
@@ -271,6 +306,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <div class="board-column">
         <div class="player">
           <div class="player__id">
+            <OpponentFace v-if="topFace" :opponent="topFace" />
             <span class="player__dot" :class="`player__dot--${topColor}`" />
             <span class="player__name">{{ playerLabel(topColor) }}</span>
             <span v-if="turn === topColor" class="player__turn">{{ t('player.turnBadge') }}</span>
@@ -297,6 +333,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
         <div class="player">
           <div class="player__id">
+            <OpponentFace v-if="bottomFace" :opponent="bottomFace" />
             <span class="player__dot" :class="`player__dot--${bottomColor}`" />
             <span class="player__name">{{ playerLabel(bottomColor) }}</span>
             <span v-if="turn === bottomColor" class="player__turn">{{ t('player.turnBadge') }}</span>
@@ -350,6 +387,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :human-color="offline.humanColor.value"
           :can-undo="offline.history.value.length > 0"
           :busy="offline.thinking.value"
+          :setup-locked="offline.setupLocked.value"
           @reset="offline.reset()"
           @undo="offline.undo"
           @flip="flipBoard"
@@ -494,7 +532,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 1.9rem;
+  /*
+   * Dipatok setinggi baris yang memuat avatar, walau avatarnya sedang tidak
+   * ada. Wajah muncul-hilang saat mode berganti; tanpa patokan ini papan ikut
+   * bergeser naik-turun setiap kali.
+   */
+  min-height: 2.5rem;
 }
 
 .player__id {

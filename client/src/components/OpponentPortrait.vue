@@ -1,23 +1,30 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-
 /**
- * Potret karakter sebagai latar, hanya di layar lebar.
+ * Potret lawan yang sedang aktif sebagai latar, hanya di layar lebar.
  *
  * Gambar diambil saat runtime dari folder `public/`, BUKAN lewat import Vite.
- * Sengaja begitu: berkasnya tidak disimpan di repo (artwork-nya berhak cipta),
- * dan `import` statis akan menggagalkan seluruh build kalau berkasnya belum
- * ada. Dengan cara ini aplikasi tetap utuh tanpa gambar, dan langsung
- * memakainya begitu berkas diletakkan — tanpa mengubah kode.
+ * Sengaja begitu: `import` statis akan menggagalkan seluruh build kalau
+ * berkasnya belum ada, sedangkan di sini "belum ada" adalah keadaan yang wajar —
+ * hanya `mari.png` yang ikut repo, sisanya kamu taruh sendiri. Dengan cara ini
+ * aplikasi tetap utuh tanpa gambar, dan langsung memakainya begitu berkas
+ * diletakkan, tanpa mengubah kode.
  */
-const src = `${import.meta.env.BASE_URL}mari.png`
-const failed = ref(false)
+import { computed } from 'vue'
+
+import { useOptionalImage } from '../composables/useOptionalImage.ts'
+import { publicUrl, type Opponent } from '../opponents.ts'
+
+const props = defineProps<{ opponent: Opponent }>()
+
+const source = computed(() => publicUrl(props.opponent.portrait))
+const { ready } = useOptionalImage(source)
 </script>
 
 <template>
   <!-- Belum ada gambarnya? Cukup menghilang — tanpa ikon gambar rusak. -->
-  <div v-if="!failed" class="portrait" aria-hidden="true">
-    <img class="portrait__img" :src="src" alt="" @error="failed = true" />
+  <div v-if="ready" class="portrait" aria-hidden="true">
+    <!-- `key` memaksa elemen baru saat lawan berganti, supaya animasinya terulang. -->
+    <img :key="source" class="portrait__img" :src="source" alt="" />
   </div>
 </template>
 
@@ -63,12 +70,31 @@ const failed = ref(false)
     /* Meluruh di ujung bawah supaya potongannya tidak terlihat sebagai garis. */
     mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, #000 72%, transparent 100%);
+    animation: portrait-in 0.45s ease-out;
+  }
+}
+
+/* Berganti lawan berarti berganti potret; muncul mengambang, bukan menyentak. */
+@keyframes portrait-in {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+  to {
+    opacity: 0.5;
+    transform: none;
   }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .portrait {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portrait__img {
+    animation: none;
   }
 }
 </style>

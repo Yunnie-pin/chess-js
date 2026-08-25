@@ -116,6 +116,31 @@ export function useChessGame() {
     mode.value === 'lawan-komputer' ? opponent(aiColor.value) : null
   )
 
+  /**
+   * Susunan pertandingan — siapa lawannya, dan pemain memegang warna apa —
+   * tidak boleh diubah di tengah permainan yang sudah berjalan.
+   *
+   * Keduanya satu aturan karena keduanya merusak hal yang sama. Mengganti lawan
+   * di langkah kesepuluh berarti separuh papan dimainkan orang lain; menukar
+   * warna berarti pemain tiba-tiba mewarisi posisi yang tadi dibangun melawan
+   * dirinya sendiri. Papannya tetap sah menurut aturan catur, tapi tidak lagi
+   * berarti apa-apa sebagai pertandingan.
+   *
+   * Patokannya langkah PEMAIN, bukan langkah pertama di papan. Kalau pemain
+   * memegang hitam, komputer yang jalan lebih dulu — mengunci di langkah
+   * pertama papan berarti lawan mustahil diganti sama sekali, karena
+   * "Permainan baru" pun langsung disusul langkah komputer dalam hitungan
+   * milidetik. Selama pemain belum menjalankan apa pun, belum ada yang
+   * dipertaruhkan, jadi tidak ada yang perlu dilindungi.
+   *
+   * Membatalkan langkah sampai habis membuka kuncinya lagi, dengan sendirinya.
+   */
+  const setupLocked = computed<boolean>(
+    () =>
+      mode.value === 'lawan-komputer' &&
+      history.value.some((entry) => entry.color === humanColor.value)
+  )
+
   /** Manusia boleh menggerakkan warna ini sekarang. */
   const canPlay = computed<Color | null>(() => {
     if (status.value.over || thinking.value || pendingPromotion.value) return null
@@ -276,8 +301,16 @@ export function useChessGame() {
     orientation.value = opponent(orientation.value)
   }
 
-  /** Ganti sisi yang dimainkan manusia; komputer langsung mengambil giliran. */
+  /**
+   * Ganti sisi yang dimainkan manusia; komputer langsung mengambil giliran.
+   *
+   * Menolak diam-diam bila pertandingan sudah berjalan. Tombolnya di UI memang
+   * sudah dinonaktifkan, tapi aturannya ditegakkan di sini juga: yang menjaga
+   * keutuhan permainan seharusnya modelnya, bukan tombolnya — sama seperti
+   * server yang tetap memvalidasi langkah walau klien sudah menyaringnya.
+   */
   function playAs(color: Color): void {
+    if (setupLocked.value) return
     aiColor.value = opponent(color)
     orientation.value = color
     scheduleAi()
@@ -419,6 +452,7 @@ export function useChessGame() {
     materialLead,
     canPlay,
     humanColor,
+    setupLocked,
     pendingPromotion,
     thinking,
     lastSearch,
