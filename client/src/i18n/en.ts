@@ -122,9 +122,12 @@ export const en: Messages = {
   'meta.lastSearch': 'Last search:',
   'meta.searchInfo': 'depth {depth} · {nodes} nodes · {ms} ms',
   'meta.shortcuts': 'Shortcuts:',
-  'meta.keyUndo': 'undo',
+  'meta.keyBrowse': 'browse moves',
   'meta.keyFlip': 'flip board',
   'meta.keyDeselect': 'clear selection',
+
+  'history.viewing': 'Viewing move {ply} of {total}',
+  'history.backToCurrent': 'Back to current position',
 
   'repo.title': 'Open source',
   'repo.subtitle': 'Come tinker on GitHub — issues and PRs welcome'

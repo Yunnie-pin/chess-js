@@ -19,7 +19,7 @@ import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
 import { resolveServerUrl } from './net/serverUrl.ts'
-import { opponent } from '@chess/shared/chess'
+import { Position, START_FEN, opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
 
 type AppMode = 'offline' | 'online'
@@ -85,44 +85,119 @@ watch(
 // Sumber data papan — offline atau online, bentuknya sama
 // ---------------------------------------------------------------------------
 
-// Papan bayangan: kalau ada premove diantre, bidaknya sudah tampak "berpindah"
-// ke tujuannya walau langkah sungguhannya belum dikirim/dijalankan.
-const board = computed<(Piece | null)[]>(() =>
-  isOnline.value ? online.displayBoard.value : offline.displayBoard.value
+const plyCount = computed(() =>
+  isOnline.value ? (online.roomState.value?.history.length ?? 0) : offline.history.value.length
 )
+
+/**
+ * Penelusuran riwayat: `null` berarti "ikuti posisi sekarang"; sebuah angka
+ * berarti "tampilkan posisi setelah sekian ply", terlepas dari giliran
+ * sungguhannya. Murni tampilan — tidak pernah mengubah permainan yang
+ * sebenarnya, dan diset ulang ke `null` setiap kali riwayatnya sendiri
+ * berubah (langkah baru, undo, permainan baru, main lagi).
+ *
+ * Dijepit ke `plyCount` saat dibaca (bukan saat ditulis) supaya kalau
+ * riwayatnya memendek di belakang layar — undo, misalnya — penelusuran yang
+ * sudah basi tidak menunjuk ke ply yang tidak ada lagi.
+ */
+const viewPly = ref<number | null>(null)
+const displayPly = computed(() => Math.min(viewPly.value ?? plyCount.value, plyCount.value))
+const isLive = computed(() => displayPly.value === plyCount.value)
+
+/** Posisi yang sedang ditelusuri, atau null bila sedang mengikuti posisi sekarang. */
+const viewedPosition = computed<Position | null>(() => {
+  if (isLive.value) return null
+  if (isOnline.value) {
+    // Riwayat jaringan cuma menyimpan from/to/promotion, bukan Move penuh —
+    // jalankan ulang dari awal dan biarkan legalMoves() sendiri yang
+    // melengkapi castle/en passant/dst. dari posisi yang sedang dibangun.
+    const history = online.roomState.value?.history ?? []
+    const position = new Position()
+    for (let i = 0; i < displayPly.value; i++) {
+      const wire = history[i]?.move
+      const match = wire
+        ? position
+            .legalMoves()
+            .find((m) => m.from === wire.from && m.to === wire.to && m.promotion === wire.promotion)
+        : null
+      if (!match) break
+      position.makeMove(match)
+    }
+    return position
+  }
+  const entry = offline.history.value[displayPly.value - 1]
+  return new Position(entry ? entry.fen : START_FEN)
+})
+
+// Papan bayangan: kalau ada premove diantre, bidaknya sudah tampak "berpindah"
+// ke tujuannya walau langkah sungguhannya belum dikirim/dijalankan. Kalau
+// sedang menelusuri riwayat, itu yang ditampilkan sebagai gantinya.
+const board = computed<(Piece | null)[]>(() => {
+  const viewed = viewedPosition.value
+  if (viewed) return viewed.board.slice()
+  return isOnline.value ? online.displayBoard.value : offline.displayBoard.value
+})
+const turn = computed<Color>(() => {
+  const viewed = viewedPosition.value
+  if (viewed) return viewed.turn
+  return isOnline.value ? online.turn.value : offline.turn.value
+})
+const checkSquare = computed<Square | null>(() => {
+  const viewed = viewedPosition.value
+  if (viewed) return viewed.inCheck() ? viewed.kings[viewed.turn] : null
+  return isOnline.value ? online.checkSquare.value : offline.checkSquare.value
+})
+const lastMove = computed<Move | null>(() => {
+  if (isLive.value) return isOnline.value ? online.lastMove.value : offline.lastMove.value
+  if (displayPly.value === 0) return null
+  if (isOnline.value) {
+    const wire = online.roomState.value?.history[displayPly.value - 1]?.move
+    return wire
+      ? ({
+          from: wire.from,
+          to: wire.to,
+          promotion: wire.promotion,
+          piece: 'wp', // tidak dipakai untuk menggambar sorotan
+          captured: null,
+          castle: null,
+          enPassant: false,
+          doublePush: false
+        } as Move)
+      : null
+  }
+  return offline.history.value[displayPly.value - 1]?.move ?? null
+})
+
+// Memilih bidak, premove, dan giliran hanya berlaku pada posisi sekarang —
+// menelusuri riwayat murni membaca, tidak pernah menyiapkan langkah apa pun.
 const selected = computed<Square | null>(() =>
-  isOnline.value ? online.selected.value : offline.selected.value
+  isLive.value ? (isOnline.value ? online.selected.value : offline.selected.value) : null
 )
 const targets = computed<Map<Square, Move[]>>(() =>
-  isOnline.value ? online.targets.value : offline.targets.value
-)
-const lastMove = computed<Move | null>(() =>
-  isOnline.value ? online.lastMove.value : offline.lastMove.value
-)
-const checkSquare = computed<Square | null>(() =>
-  isOnline.value ? online.checkSquare.value : offline.checkSquare.value
+  isLive.value ? (isOnline.value ? online.targets.value : offline.targets.value) : new Map()
 )
 const canPlay = computed<Color | null>(() =>
-  isOnline.value ? online.canPlay.value : offline.canPlay.value
+  isLive.value ? (isOnline.value ? online.canPlay.value : offline.canPlay.value) : null
 )
 const premoveColor = computed<Color | null>(() =>
-  isOnline.value ? online.premoveColor.value : offline.premoveColor.value
+  isLive.value ? (isOnline.value ? online.premoveColor.value : offline.premoveColor.value) : null
 )
 const premoveQueue = computed<{ from: Square; to: Square }[]>(() =>
-  (isOnline.value ? online.premoveQueue.value : offline.premoveQueue.value).map((step) => ({
-    from: step.from,
-    to: step.to
-  }))
+  isLive.value
+    ? (isOnline.value ? online.premoveQueue.value : offline.premoveQueue.value).map((step) => ({
+        from: step.from,
+        to: step.to
+      }))
+    : []
 )
 const premoveFailed = computed<{ from: Square; to: Square } | null>(() =>
-  isOnline.value ? online.premoveFailed.value : offline.premoveFailed.value
+  isLive.value ? (isOnline.value ? online.premoveFailed.value : offline.premoveFailed.value) : null
 )
 const premoveBannerText = computed(() =>
   premoveQueue.value.length > 1
     ? `${t('premove.queued')} (${premoveQueue.value.length})`
     : t('premove.queued')
 )
-const turn = computed<Color>(() => (isOnline.value ? online.turn.value : offline.turn.value))
 const captured = computed<Record<Color, PieceType[]>>(() =>
   isOnline.value ? online.captured.value : offline.captured.value
 )
@@ -132,20 +207,60 @@ const materialLead = computed(() =>
 const historyRows = computed(() =>
   isOnline.value ? online.historyRows.value : offline.historyRows.value
 )
-const plyCount = computed(() =>
-  isOnline.value ? (online.roomState.value?.history.length ?? 0) : offline.history.value.length
-)
 const pendingPromotionColor = computed<Color | null>(() =>
   isOnline.value
     ? (online.pendingPromotion.value?.color ?? null)
     : (offline.pendingPromotion.value?.color ?? null)
 )
 
-const activateSquare = (square: Square) =>
-  isOnline.value ? online.activateSquare(square) : offline.activateSquare(square)
+/**
+ * Klik di papan selagi menelusuri riwayat cuma kembali ke posisi sekarang —
+ * tidak diteruskan sebagai langkah. Tanpa ini, klik akan tetap tembus ke
+ * composable sungguhan (yang tidak tahu-menahu soal ply yang sedang
+ * ditampilkan) dan diam-diam menjalankan langkah di posisi yang sebenarnya,
+ * padahal papan yang terlihat masih papan lama.
+ */
+const activateSquare = (square: Square) => {
+  if (!isLive.value) {
+    viewPly.value = null
+    return
+  }
+  if (isOnline.value) online.activateSquare(square)
+  else offline.activateSquare(square)
+}
 
-const dropPiece = (from: Square, to: Square) =>
-  isOnline.value ? online.dropPiece(from, to) : offline.dropPiece(from, to)
+const dropPiece = (from: Square, to: Square) => {
+  if (!isLive.value) {
+    viewPly.value = null
+    return
+  }
+  if (isOnline.value) online.dropPiece(from, to)
+  else offline.dropPiece(from, to)
+}
+
+/** Mundur/maju satu ply; sampai di ujung terbaru kembali "mengikuti" posisi sekarang. */
+function stepView(delta: -1 | 1): void {
+  const next = Math.min(plyCount.value, Math.max(0, displayPly.value + delta))
+  viewPly.value = next === plyCount.value ? null : next
+}
+
+function jumpView(ply: number): void {
+  const clamped = Math.min(plyCount.value, Math.max(0, ply))
+  viewPly.value = clamped === plyCount.value ? null : clamped
+}
+
+// Riwayatnya sendiri berubah bentuk (langkah baru dari sini, room lain,
+// dsb.) — kembali mengikuti posisi sekarang alih-alih menunjuk ply yang
+// sudah tidak lagi berarti sama.
+watch(appMode, () => {
+  viewPly.value = null
+})
+watch(
+  () => online.inRoom.value,
+  () => {
+    viewPly.value = null
+  }
+)
 
 const completePromotion = (type: 'q' | 'r' | 'b' | 'n') =>
   isOnline.value ? online.completePromotion(type) : offline.completePromotion(type)
@@ -271,6 +386,21 @@ const flipBoard = () => {
   orientation.value = opponent(orientation.value)
 }
 
+// Setiap aksi yang membentuk ulang riwayatnya sendiri mengembalikan
+// penelusuran ke posisi sekarang — lihat catatan pada `viewPly`.
+const resetGame = () => {
+  offline.reset()
+  viewPly.value = null
+}
+const undoMove = () => {
+  offline.undo()
+  viewPly.value = null
+}
+const rematch = () => {
+  online.rematch()
+  viewPly.value = null
+}
+
 function onKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
   if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return
@@ -281,10 +411,17 @@ function onKeydown(event: KeyboardEvent): void {
     if (isOnline.value) online.selected.value = null
     else offline.selected.value = null
     cancelPremove()
-  } else if (!isOnline.value && (event.key === 'ArrowLeft' || (event.ctrlKey && event.key.toLowerCase() === 'z'))) {
+    viewPly.value = null
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    // Menelusuri riwayat, bukan membatalkan langkah — berlaku di kedua mode,
+    // karena murni tampilan dan tidak menyentuh permainan yang sebenarnya.
+    event.preventDefault()
+    stepView(event.key === 'ArrowLeft' ? -1 : 1)
+  } else if (!isOnline.value && event.ctrlKey && event.key.toLowerCase() === 'z') {
     // Undo hanya untuk permainan lokal — di online, papan milik server.
     event.preventDefault()
     offline.undo()
+    viewPly.value = null
   }
 }
 
@@ -373,6 +510,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             :lead="leadFor(bottomColor)"
           />
         </div>
+
+        <MoveHistory
+          :rows="historyRows"
+          :ply-count="plyCount"
+          :active-ply="displayPly"
+          @jump="jumpView"
+        />
       </div>
 
       <aside class="panel">
@@ -381,7 +525,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <span>{{ statusText }}</span>
         </div>
 
-        <div v-if="premoveQueue.length" class="premove-banner">
+        <div v-if="!isLive" class="premove-banner">
+          <span>{{ t('history.viewing', { ply: displayPly, total: plyCount }) }}</span>
+          <button type="button" class="premove-banner__cancel" @click="viewPly = null">
+            {{ t('history.backToCurrent') }}
+          </button>
+        </div>
+
+        <div v-else-if="premoveQueue.length" class="premove-banner">
           <span>{{ premoveBannerText }}</span>
           <button type="button" class="premove-banner__cancel" @click="cancelPremove">
             {{ t('premove.cancel') }}
@@ -409,7 +560,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             :can-resign="canResign"
             :can-rematch="canRematch"
             @resign="online.resign"
-            @rematch="online.rematch"
+            @rematch="rematch"
             @leave="online.leaveRoom"
           />
           <button type="button" class="flip" @click="flipBoard">{{ t('board.flip') }}</button>
@@ -425,25 +576,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :can-undo="offline.history.value.length > 0"
           :busy="offline.thinking.value"
           :setup-locked="offline.setupLocked.value"
-          @reset="offline.reset()"
-          @undo="offline.undo"
+          @reset="resetGame"
+          @undo="undoMove"
           @flip="flipBoard"
           @play-as="offline.playAs"
         />
-
-        <MoveHistory :rows="historyRows" :ply-count="plyCount" />
 
         <footer class="meta">
           <p v-if="!isOnline && offline.mode.value === 'lawan-komputer'" class="meta__line">
             {{ t('meta.poweredBy') }}
           </p>
           <p v-if="searchInfo" class="meta__line">{{ t('meta.lastSearch') }} {{ searchInfo }}</p>
-          <p v-if="!isOnline" class="meta__line meta__fen" :title="offline.fen.value">
-            FEN: {{ offline.fen.value }}
+          <p v-if="!isOnline" class="meta__line meta__fen" :title="viewedPosition?.fen() ?? offline.fen.value">
+            FEN: {{ viewedPosition?.fen() ?? offline.fen.value }}
           </p>
           <p class="meta__line meta__keys">
             {{ t('meta.shortcuts') }}
-            <template v-if="!isOnline"><kbd>←</kbd> {{ t('meta.keyUndo') }} · </template>
+            <kbd>←</kbd><kbd>→</kbd> {{ t('meta.keyBrowse') }} ·
             <kbd>F</kbd> {{ t('meta.keyFlip') }} · <kbd>Esc</kbd> {{ t('meta.keyDeselect') }}
           </p>
         </footer>

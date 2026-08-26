@@ -187,7 +187,11 @@ The computer opponent is Stockfish, running locally via WebAssembly, with five
 Elo levels and a 500 ms minimum reply delay so its moves don't pop in out of
 nowhere.
 
-Shortcuts: `←` undo, `F` flip the board, `Esc` clear the selection.
+Shortcuts: `←`/`→` step back/forward through the move list (works in online
+games too — it's purely a viewer, it never touches the real position), `F`
+flip the board, `Esc` clear the selection and jump back to the current
+position. Undo is `Ctrl`+`Z` or the button, local play only — it actually
+removes moves, unlike stepping through history.
 
 ## Opponents
 

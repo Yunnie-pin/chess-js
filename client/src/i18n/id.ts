@@ -150,9 +150,13 @@ export const id = {
   'meta.lastSearch': 'Pencarian terakhir:',
   'meta.searchInfo': 'kedalaman {depth} · {nodes} simpul · {ms} ms',
   'meta.shortcuts': 'Pintasan:',
-  'meta.keyUndo': 'batalkan',
+  'meta.keyBrowse': 'lihat langkah',
   'meta.keyFlip': 'putar papan',
   'meta.keyDeselect': 'batal pilih',
+
+  // Menelusuri riwayat langkah
+  'history.viewing': 'Melihat langkah {ply} dari {total}',
+  'history.backToCurrent': 'Kembali ke posisi sekarang',
 
   // Tautan repositori
   'repo.title': 'Open source',

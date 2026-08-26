@@ -11,9 +11,15 @@ interface Row {
   black?: { san: string }
 }
 
-const props = defineProps<{ rows: Row[]; plyCount: number }>()
+const props = defineProps<{ rows: Row[]; plyCount: number; activePly: number }>()
+
+const emit = defineEmits<{ jump: [ply: number] }>()
 
 const listEl = ref<HTMLElement | null>(null)
+
+/** Ply dari sebuah baris: putih di (nomor-1)*2+1, hitam tepat sesudahnya. */
+const plyOf = (row: Row, color: 'white' | 'black'): number =>
+  (row.number - 1) * 2 + (color === 'white' ? 1 : 2)
 
 // Selalu perlihatkan langkah terakhir tanpa perlu menggulir manual.
 watch(
@@ -22,6 +28,36 @@ watch(
     await nextTick()
     const el = listEl.value
     if (el) el.scrollTop = el.scrollHeight
+  }
+)
+
+/**
+ * Gulir HANYA daftar internalnya sendiri, bukan `Element.scrollIntoView` —
+ * itu ikut menggulir seluruh halaman kalau elemennya di luar layar, dan
+ * sejak daftar ini pindah ke bawah papan (bukan lagi di panel tetap di
+ * samping), setiap langkah baru sama saja dengan "di luar layar" begitu
+ * papannya cukup tinggi. Akibatnya halaman melompat sendiri setiap kali
+ * bermain — persis yang mau dihindari di sini.
+ */
+function scrollActiveIntoView(): void {
+  const container = listEl.value
+  const target = container?.querySelector<HTMLElement>(`[data-ply="${props.activePly}"]`)
+  if (!container || !target) return
+  const top = target.offsetTop
+  const bottom = top + target.offsetHeight
+  if (top < container.scrollTop) container.scrollTop = top
+  else if (bottom > container.scrollTop + container.clientHeight) {
+    container.scrollTop = bottom - container.clientHeight
+  }
+}
+
+// Menelusuri lewat panah keyboard atau lompat lewat MoveHistory sendiri
+// sama-sama harus terlihat, walau di luar area yang sedang digulir.
+watch(
+  () => props.activePly,
+  async () => {
+    await nextTick()
+    scrollActiveIntoView()
   }
 )
 </script>
@@ -35,8 +71,30 @@ watch(
         <tbody>
           <tr v-for="row in rows" :key="row.number">
             <td class="history__number">{{ row.number }}.</td>
-            <td class="history__san">{{ row.white?.san ?? '' }}</td>
-            <td class="history__san">{{ row.black?.san ?? '' }}</td>
+            <td class="history__san">
+              <button
+                v-if="row.white"
+                type="button"
+                class="history__move"
+                :class="{ 'history__move--active': plyOf(row, 'white') === activePly }"
+                :data-ply="plyOf(row, 'white')"
+                @click="emit('jump', plyOf(row, 'white'))"
+              >
+                {{ row.white.san }}
+              </button>
+            </td>
+            <td class="history__san">
+              <button
+                v-if="row.black"
+                type="button"
+                class="history__move"
+                :class="{ 'history__move--active': plyOf(row, 'black') === activePly }"
+                :data-ply="plyOf(row, 'black')"
+                @click="emit('jump', plyOf(row, 'black'))"
+              >
+                {{ row.black.san }}
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -48,8 +106,6 @@ watch(
 .history {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  flex: 1;
 }
 
 .history__title {
@@ -96,7 +152,30 @@ watch(
 }
 
 .history__san {
-  padding: 0.24rem 0.5rem;
+  padding: 0.15rem 0.3rem;
   font-family: var(--font-mono);
+}
+
+.history__move {
+  width: 100%;
+  padding: 0.09rem 0.2rem;
+  font: inherit;
+  font-family: var(--font-mono);
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 0.3rem;
+  color: inherit;
+  cursor: pointer;
+}
+
+.history__move:hover {
+  background: var(--surface-hover);
+}
+
+.history__move--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 </style>
