@@ -169,7 +169,13 @@ watch(
   cursor: pointer;
 }
 
-.history__move:hover {
+@media (hover: hover) {
+  .history__move:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.history__move:active {
   background: var(--surface-hover);
 }
 

@@ -62,8 +62,16 @@ const REPO_URL = 'https://github.com/Yunnie-pin/chess-js'
   transition: background 0.15s, border-color 0.15s;
 }
 
-.repo:hover,
-.repo:focus-visible {
+/* Hover dikurung supaya tidak menempel setelah diketuk; lihat catatannya di App.vue. */
+@media (hover: hover) {
+  .repo:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent);
+  }
+}
+
+.repo:focus-visible,
+.repo:active {
   background: var(--surface-hover);
   border-color: var(--accent);
 }
@@ -100,16 +108,22 @@ const REPO_URL = 'https://github.com/Yunnie-pin/chess-js'
   transition: color 0.15s, transform 0.15s;
 }
 
-.repo:hover .repo__arrow {
-  color: var(--accent);
-  transform: translate(1px, -1px);
+@media (hover: hover) {
+  .repo:hover .repo__arrow {
+    color: var(--accent);
+    transform: translate(1px, -1px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .repo__arrow {
     transition: color 0.15s;
   }
+}
 
+/* Dua syarat digabung dalam satu query: `@media` bersarang di dalam `@media`
+   baru sah lewat CSS Nesting, dan tidak ada untungnya bergantung ke situ. */
+@media (prefers-reduced-motion: reduce) and (hover: hover) {
   .repo:hover .repo__arrow {
     transform: none;
   }

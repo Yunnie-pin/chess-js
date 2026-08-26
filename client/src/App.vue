@@ -773,7 +773,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   cursor: pointer;
 }
 
-.modes__item:hover {
+/*
+ * Semua gaya `:hover` di aplikasi ini dikurung `@media (hover: hover)`.
+ *
+ * Di layar sentuh tidak ada "menjauh dari elemen", jadi gaya hover menempel
+ * setelah diketuk sampai pemain mengetuk tempat lain — tombol yang barusan
+ * ditekan terus tampak seolah sedang ditunjuk. `:active` yang menggantikannya
+ * sebagai umpan balik ketukan.
+ */
+@media (hover: hover) {
+  .modes__item:hover {
+    color: var(--text);
+  }
+}
+
+.modes__item:active {
   color: var(--text);
 }
 
@@ -931,7 +945,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   transition: background 0.15s, border-color 0.15s;
 }
 
-.status__action:hover {
+@media (hover: hover) {
+  .status__action:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+}
+
+.status__action:active {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
@@ -1037,7 +1058,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   flex-shrink: 0;
 }
 
-.premove-banner__cancel:hover {
+@media (hover: hover) {
+  .premove-banner__cancel:hover {
+    background: var(--surface-hover);
+    border-color: var(--text-muted);
+  }
+}
+
+.premove-banner__cancel:active {
   background: var(--surface-hover);
   border-color: var(--text-muted);
 }
@@ -1053,7 +1081,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   cursor: pointer;
 }
 
-.flip:hover {
+@media (hover: hover) {
+  .flip:hover {
+    background: var(--surface-hover);
+    border-color: var(--text-muted);
+  }
+}
+
+.flip:active {
   background: var(--surface-hover);
   border-color: var(--text-muted);
 }
@@ -1095,6 +1130,48 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
   .panel {
     position: static;
+  }
+
+  /*
+   * Papan itu `width: 100%` + `aspect-ratio: 1`, jadi tingginya selalu ikut
+   * lebarnya. Begitu layoutnya satu kolom, lebar itu berarti selebar layar —
+   * dan di ponsel lanskap papannya jadi jauh lebih tinggi daripada jendelanya
+   * sendiri. Batasnya dipasang di kolomnya, bukan di papan, supaya baris pemain
+   * dan daftar langkah tetap selebar papan alih-alih menggantung lebih lebar.
+   *
+   * Sisa 13rem itu jatah header, dua baris pemain, dan jarak antarelemen.
+   * `dvh` (bukan `vh`) supaya bilah peramban yang muncul-hilang saat menggulir
+   * tidak memotong papan; baris `vh` di atasnya cadangan untuk peramban lama.
+   */
+  .board-column {
+    max-width: min(100%, calc(100vh - 13rem));
+    max-width: min(100%, calc(100dvh - 13rem));
+    margin-inline: auto;
+  }
+}
+
+/*
+ * Ruang di ponsel terlalu mahal untuk padding selebar desktop: 1.25rem di tiap
+ * sisi memakan 40px dari layar 360px, sekitar 11% lebar papan.
+ */
+@media (max-width: 40rem) {
+  .app {
+    padding: 1rem 0.6rem 2rem;
+  }
+
+  .app__header {
+    margin-bottom: 1rem;
+  }
+
+  .app__title {
+    font-size: 1.35rem;
+  }
+}
+
+/* Pintasan papan tik tidak ada gunanya di perangkat yang tidak punya papan tik. */
+@media (hover: none), (pointer: coarse) {
+  .meta__keys {
+    display: none;
   }
 }
 

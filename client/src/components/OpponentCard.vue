@@ -74,17 +74,59 @@ const { ready: hasFace } = useOptionalImage(faceSource)
   cursor: pointer;
   overflow: hidden;
   isolation: isolate;
-  transition: background 0.18s, border-color 0.18s;
+  /* `padding` dan `box-shadow` ikut ditransisikan karena keduanya yang
+     menumbuhkan kartu terpilih — lihat `.card--on`. */
+  transition: background 0.18s, border-color 0.18s, padding 0.22s ease-out,
+    box-shadow 0.22s ease-out;
   --halo-size: 2.1rem;
 }
 
-.card:hover {
-  background: var(--surface-hover);
+/* Hover dikurung supaya tidak menempel setelah diketuk; lihat catatannya di App.vue. */
+@media (hover: hover) {
+  .card:hover {
+    background: var(--surface-hover);
+  }
 }
 
+/*
+ * Yang terpilih tidak sekadar berganti warna — ia tumbuh.
+ *
+ * Tingginya dinaikkan lewat PADDING, bukan `height`. Kartu ini setinggi isinya
+ * (`height: auto`), dan nilai `auto` tidak bisa ditransisikan: memberinya
+ * tinggi eksplisit hanya akan membuatnya melompat ke ukuran baru, sekaligus
+ * mematok angka yang harus disetel ulang tiap kali isinya berubah. Padding
+ * bisa dianimasikan dan hasil akhirnya persis sama.
+ *
+ * Halonya ikut membesar supaya kartu tumbuh sebagai satu kesatuan, bukan
+ * sekadar melar di ruang kosongnya. Ukuran halo diteruskan lewat `--halo-size`
+ * dan ditransisikan di sisi OpponentHalo.
+ */
 .card--on {
   border-color: var(--accent);
   background: var(--accent-soft);
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+  --halo-size: 2.6rem;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  animation: card-select 0.42s ease-out;
+}
+
+/*
+ * Denyut tipis sekali jalan saat kartu terpilih.
+ *
+ * Cincinnya `box-shadow` yang melebar lalu menghilang. `overflow: hidden` di
+ * kartu tidak memotongnya — itu mengurung ANAK elemen, bukan bayangan milik
+ * elemen itu sendiri. Bayangan tetap milik `.card--on` di atas, jadi
+ * animasinya menulis ulang kedua lapisannya sekaligus supaya yang permanen
+ * tidak hilang selama denyutnya berjalan.
+ */
+@keyframes card-select {
+  from {
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 0 var(--accent);
+  }
+  to {
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.35), 0 0 0 0.6rem transparent;
+  }
 }
 
 /*
@@ -111,6 +153,11 @@ const { ready: hasFace } = useOptionalImage(faceSource)
    * Gambarnya 252x204, kartunya sekitar 285x48 — jauh lebih pipih. Gambar
    * diperbesar sampai selebar elemen ini, lalu kartu memotong atas-bawahnya.
    * Makin lebar, makin besar perbesarannya, makin sempit irisan yang muat:
+   *
+   * (Angka 48 itu kartu yang TIDAK terpilih. Yang terpilih lebih tinggi, jadi
+   * irisan wajah yang tampil di sana memang lebih banyak — disengaja. Yang
+   * berubah hanya tingginya; seluruh hitungan mendatar di bawah, termasuk
+   * mask-nya, tidak tersentuh.)
    *
    *   lebar 58% -> tinggi 134px -> 36% gambar terlihat -> sisa geser 85px
    *   lebar 36% -> tinggi  83px -> 58% terlihat        -> sisa geser 35px
@@ -159,8 +206,10 @@ const { ready: hasFace } = useOptionalImage(faceSource)
   transition: opacity 0.18s, transform 0.18s;
 }
 
-.card:hover .card__face {
-  opacity: 0.65;
+@media (hover: hover) {
+  .card:hover .card__face {
+    opacity: 0.65;
+  }
 }
 
 /* Yang terpilih tampil paling jelas — itu satu-satunya yang sedang kamu lawan. */
@@ -213,6 +262,14 @@ const { ready: hasFace } = useOptionalImage(faceSource)
   .card,
   .card__face {
     transition: none;
+  }
+
+  /*
+   * Kartu terpilih tetap lebih tinggi — itu informasi, bukan hiasan; yang
+   * dibuang hanya perjalanan ke sananya, plus denyut yang murni dekoratif.
+   */
+  .card--on {
+    animation: none;
   }
 
   /*

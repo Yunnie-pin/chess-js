@@ -115,7 +115,15 @@ onBeforeUnmount(() => {
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.settings__trigger:hover {
+/* Hover dikurung supaya tidak menempel setelah diketuk; lihat catatannya di App.vue. */
+@media (hover: hover) {
+  .settings__trigger:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+}
+
+.settings__trigger:active {
   color: var(--text);
   border-color: var(--text-muted);
 }

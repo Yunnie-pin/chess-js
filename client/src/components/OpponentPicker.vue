@@ -112,7 +112,11 @@ const visibleOpponents = computed(() =>
   cursor: default;
 }
 
-.picker[disabled] :deep(.card:hover) {
-  background: var(--surface);
+/* Mengikuti pengurungan hover di OpponentCard — kalau tidak, penawar ini
+   menyasar aturan yang di layar sentuh memang sudah tidak ada. */
+@media (hover: hover) {
+  .picker[disabled] :deep(.card:hover) {
+    background: var(--surface);
+  }
 }
 </style>

@@ -136,8 +136,10 @@ const id = toRef(() => props.opponent.id)
   box-shadow: 0 0 0 3px var(--accent-soft);
   color: var(--accent);
   overflow: hidden;
-  /* Warna dan pendar ikut berganti bersama lawan; jangan sampai terasa melompat. */
-  transition: color 0.25s, box-shadow 0.25s;
+  /* Warna dan pendar ikut berganti bersama lawan; jangan sampai terasa melompat.
+     Ukurannya juga: kartu lawan menaikkan `--halo-size` saat terpilih, dan
+     tanpa transisi di sini halonya menyentak sementara kartunya tumbuh mulus. */
+  transition: color 0.25s, box-shadow 0.25s, width 0.22s ease-out, height 0.22s ease-out;
 }
 
 .mark__svg {
