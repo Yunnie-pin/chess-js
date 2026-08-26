@@ -17,12 +17,19 @@ const props = defineProps<{
   checkSquare: Square | null
   /** Warna yang boleh digerakkan manusia sekarang, atau null bila papan terkunci. */
   playable: Color | null
+  /** Warna yang boleh menyiapkan premove sekarang, atau null bila tidak berlaku. */
+  premoveColor: Color | null
+  /** Langkah-langkah premove yang sedang diantre, untuk sorotan — bisa lebih dari satu. */
+  premoveQueue: { from: Square; to: Square }[]
+  /** Langkah premove yang baru saja gagal, untuk kedipan merah sesaat. */
+  premoveFailed: { from: Square; to: Square } | null
   showHints: boolean
 }>()
 
 const emit = defineEmits<{
   activate: [square: Square]
   drop: [from: Square, to: Square]
+  rightClick: []
 }>()
 
 const boardEl = ref<HTMLElement | null>(null)
@@ -37,6 +44,16 @@ interface DragState {
 }
 const drag = ref<DragState | null>(null)
 
+interface RightDragState {
+  from: Square
+  pointerId: number
+  moved: boolean
+}
+const rightDrag = ref<RightDragState | null>(null)
+/** Anotasi papan (panah dan tanda petak), digambar lewat klik kanan — murni lokal, tidak memengaruhi permainan. */
+const arrows = ref<{ from: Square; to: Square }[]>([])
+const marks = ref<Set<Square>>(new Set())
+
 /** Urutan petak yang digambar: dari sudut pandang pemain yang sedang melihat. */
 const squares = computed<Square[]>(() => {
   const list = Array.from({ length: 64 }, (_, index) => index)
@@ -47,11 +64,16 @@ const isLight = isLightSquare
 
 const canGrab = (square: Square): boolean => {
   const piece = props.board[square]
-  return !!piece && !!props.playable && colorOf(piece) === props.playable
+  if (!piece) return false
+  if (props.playable && colorOf(piece) === props.playable) return true
+  return !!props.premoveColor && colorOf(piece) === props.premoveColor
 }
 
 const isCapture = (square: Square): boolean =>
   !!props.board[square] || (props.targets.get(square)?.[0]?.enPassant ?? false)
+
+const isPremoveSquare = (square: Square): boolean =>
+  props.premoveQueue.some((step) => step.from === square || step.to === square)
 
 /** Label koordinat hanya di tepi papan, seperti papan sungguhan. */
 const fileLabel = (square: Square): string | null => {
@@ -77,7 +99,23 @@ function squareFromPoint(clientX: number, clientY: number): Square | null {
 }
 
 function onPointerDown(square: Square, event: PointerEvent): void {
+  if (event.button === 2) {
+    event.preventDefault()
+    emit('rightClick')
+    rightDrag.value = { from: square, pointerId: event.pointerId, moved: false }
+    window.addEventListener('pointermove', onRightPointerMove)
+    window.addEventListener('pointerup', onRightPointerUp)
+    window.addEventListener('pointercancel', endRightDrag)
+    return
+  }
   if (event.button !== 0) return
+
+  // Klik kiri membersihkan anotasi papan, seperti pada situs catur pada umumnya.
+  if (arrows.value.length || marks.value.size) {
+    arrows.value = []
+    marks.value.clear()
+  }
+
   emit('activate', square)
 
   const piece = props.board[square]
@@ -95,6 +133,61 @@ function onPointerDown(square: Square, event: PointerEvent): void {
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('pointercancel', endDrag)
+}
+
+function onRightPointerMove(event: PointerEvent): void {
+  const state = rightDrag.value
+  if (!state || event.pointerId !== state.pointerId) return
+  const target = squareFromPoint(event.clientX, event.clientY)
+  if (target !== null && target !== state.from) state.moved = true
+}
+
+function onRightPointerUp(event: PointerEvent): void {
+  const state = rightDrag.value
+  if (!state || event.pointerId !== state.pointerId) return
+  const target = squareFromPoint(event.clientX, event.clientY)
+  if (target !== null) {
+    if (state.moved && target !== state.from) toggleArrow(state.from, target)
+    else toggleMark(state.from)
+  }
+  endRightDrag()
+}
+
+function endRightDrag(): void {
+  rightDrag.value = null
+  window.removeEventListener('pointermove', onRightPointerMove)
+  window.removeEventListener('pointerup', onRightPointerUp)
+  window.removeEventListener('pointercancel', endRightDrag)
+}
+
+/** Menggambar ulang panah yang sudah ada menghapusnya — cara umum di situs catur untuk membatalkan satu panah. */
+function toggleArrow(from: Square, to: Square): void {
+  const index = arrows.value.findIndex((arrow) => arrow.from === from && arrow.to === to)
+  if (index >= 0) arrows.value.splice(index, 1)
+  else arrows.value.push({ from, to })
+}
+
+function toggleMark(square: Square): void {
+  if (marks.value.has(square)) marks.value.delete(square)
+  else marks.value.add(square)
+}
+
+/** Titik tengah petak dalam persen (0-100), mengikuti orientasi papan — dasar untuk menggambar panah. */
+function squareCenter(square: Square): { x: number; y: number } {
+  const row = props.orientation === 'w' ? rankOf(square) : 7 - rankOf(square)
+  const col = props.orientation === 'w' ? fileOf(square) : 7 - fileOf(square)
+  return { x: (col + 0.5) * 12.5, y: (row + 0.5) * 12.5 }
+}
+
+/** Ujung panah dipendekkan sedikit supaya tidak menusuk ke tengah bidak tujuan. */
+function arrowTip(from: Square, to: Square): { x: number; y: number } {
+  const start = squareCenter(from)
+  const end = squareCenter(to)
+  const dx = end.x - start.x
+  const dy = end.y - start.y
+  const len = Math.hypot(dx, dy) || 1
+  const shorten = 4.5
+  return { x: end.x - (dx / len) * shorten, y: end.y - (dy / len) * shorten }
 }
 
 function onPointerMove(event: PointerEvent): void {
@@ -123,7 +216,10 @@ function endDrag(): void {
   window.removeEventListener('pointercancel', endDrag)
 }
 
-onBeforeUnmount(endDrag)
+onBeforeUnmount(() => {
+  endDrag()
+  endRightDrag()
+})
 
 /** Bidak yang sedang diseret mengikuti kursor, jadi dilepas dari alur papan. */
 const dragStyle = computed(() => {
@@ -147,6 +243,7 @@ const dragStyle = computed(() => {
       :class="{ 'board--dragging': drag?.moved }"
       role="grid"
       :aria-label="t('board.ariaLabel')"
+      @contextmenu.prevent
     >
       <div
         v-for="square in squares"
@@ -158,6 +255,10 @@ const dragStyle = computed(() => {
           'square--selected': square === props.selected,
           'square--last': square === props.lastMove?.from || square === props.lastMove?.to,
           'square--check': square === props.checkSquare,
+          'square--premove': isPremoveSquare(square),
+          'square--premove-failed':
+            square === props.premoveFailed?.from || square === props.premoveFailed?.to,
+          'square--marked': marks.has(square),
           'square--grabbable': canGrab(square)
         }"
         role="gridcell"
@@ -177,6 +278,31 @@ const dragStyle = computed(() => {
           :class="{ 'piece--ghost': drag?.moved && drag.from === square }"
         />
       </div>
+
+      <svg v-if="arrows.length" class="arrows-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <marker
+            id="premove-arrowhead"
+            markerWidth="3"
+            markerHeight="3"
+            refX="2.4"
+            refY="1.5"
+            orient="auto"
+            markerUnits="strokeWidth"
+          >
+            <path d="M0,0 L3,1.5 L0,3 Z" />
+          </marker>
+        </defs>
+        <line
+          v-for="(arrow, index) in arrows"
+          :key="index"
+          :x1="squareCenter(arrow.from).x"
+          :y1="squareCenter(arrow.from).y"
+          :x2="arrowTip(arrow.from, arrow.to).x"
+          :y2="arrowTip(arrow.from, arrow.to).y"
+          marker-end="url(#premove-arrowhead)"
+        />
+      </svg>
     </div>
 
     <ChessPiece v-if="drag?.moved" class="drag-layer" :piece="drag.piece" :style="dragStyle" />
@@ -238,7 +364,10 @@ const dragStyle = computed(() => {
 /* Sorotan dipasang sebagai lapisan agar warna dasar petak tetap terlihat. */
 .square--last::before,
 .square--selected::before,
-.square--check::before {
+.square--check::before,
+.square--premove::before,
+.square--premove-failed::before,
+.square--marked::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -256,6 +385,51 @@ const dragStyle = computed(() => {
 
 .square--check::before {
   background: radial-gradient(circle, var(--danger) 0%, var(--danger-fade) 72%);
+}
+
+/* Langkah yang sudah diantre (premove), menunggu giliran sendiri tiba. */
+.square--premove::before {
+  background: rgba(88, 140, 255, 0.32);
+  box-shadow: inset 0 0 0 3px rgba(88, 140, 255, 0.8);
+}
+
+/* Kedip merah sesaat saat premove ternyata sudah tidak legal begitu dieksekusi. */
+.square--premove-failed::before {
+  background: rgba(239, 68, 68, 0.55);
+  animation: premove-fail-flash 650ms ease-out;
+}
+
+@keyframes premove-fail-flash {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Tanda petak dari klik kanan — murni anotasi, tidak memengaruhi permainan. */
+.square--marked::before {
+  background: var(--accent);
+  opacity: 0.35;
+}
+
+.arrows-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.arrows-layer line {
+  stroke: var(--accent);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.arrows-layer marker path {
+  fill: var(--accent);
 }
 
 .hint {

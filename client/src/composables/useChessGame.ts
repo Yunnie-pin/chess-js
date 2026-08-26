@@ -9,6 +9,7 @@
  */
 
 import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
+import type { Ref } from 'vue'
 
 import { Position, START_FEN, WHITE, algebraic, colorOf, opponent, typeOf } from '@chess/shared/chess'
 import { DEFAULT_ELO, ELO_LEVELS, STRENGTH_PROFILES, chooseMove } from '@chess/shared/ai'
@@ -33,7 +34,19 @@ export interface PendingPromotion {
   options: Move[]
 }
 
+export interface Premove {
+  from: Square
+  to: Square
+  promotion: PromotionType | null
+}
+
 const MATERIAL_VALUE: Record<PieceType, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }
+
+/** Batas panjang antrean premove — cukup untuk beberapa langkah beruntun, tidak perlu tak terhingga. */
+const MAX_PREMOVE_QUEUE = 5
+
+/** Berapa lama sorotan merah "premove gagal" tetap tampil sebelum memudar. */
+const PREMOVE_FAIL_FLASH_MS = 650
 
 /**
  * Jeda minimum antara langkah pemain dan jawaban komputer. Ini batas bawah,
@@ -42,7 +55,16 @@ const MATERIAL_VALUE: Record<PieceType, number> = { p: 1, n: 3, b: 3, r: 5, q: 9
  */
 export const MIN_REPLY_MS = 500
 
-export function useChessGame() {
+export interface UseChessGameOptions {
+  /**
+   * Sakelar premove, dibagi dari luar (App.vue) supaya nilainya sama di mode
+   * offline dan online sekaligus — persis seperti `showHints` sekarang, yang
+   * checkbox-nya cuma ada satu tapi dipakai di kedua papan.
+   */
+  premoveEnabled?: Ref<boolean>
+}
+
+export function useChessGame(options: UseChessGameOptions = {}) {
   const position = new Position()
 
   /** Dinaikkan setiap kali papan berubah — inilah dependensi semua computed. */
@@ -55,6 +77,12 @@ export function useChessGame() {
   const selected = ref<Square | null>(null)
   const lastMove = shallowRef<Move | null>(null)
   const pendingPromotion = shallowRef<PendingPromotion | null>(null)
+  /** Antrean premove, dijalankan satu per satu begitu giliran manusia benar-benar tiba. */
+  const premoveQueue = ref<Premove[]>([])
+  /** Langkah premove yang baru saja gagal (tidak legal lagi) — untuk kedipan merah sesaat. */
+  const premoveFailed = shallowRef<{ from: Square; to: Square } | null>(null)
+  let premoveFailTimer: ReturnType<typeof setTimeout> | null = null
+  const premoveEnabled = options.premoveEnabled ?? ref(true)
 
   const orientation = ref<Color>(WHITE)
   const mode = ref<GameMode>('lawan-komputer')
@@ -99,11 +127,34 @@ export function useChessGame() {
     return position.inCheck() ? position.kings[position.turn] : null
   })
 
-  /** Petak tujuan yang sah dari bidak yang sedang dipilih, beserta langkahnya. */
+  /**
+   * Petak tujuan dari bidak yang sedang dipilih, beserta langkahnya. Saat
+   * gilirannya sendiri, ini langkah legal sungguhan. Saat giliran mesin, ini
+   * pola gerak bidak di papan bayangan (pseudo-legal, dengan antrean premove
+   * yang sudah ada ikut diperhitungkan) — dipakai untuk menyiapkan premove
+   * berikutnya, dan diperiksa ulang sebagai langkah sungguhan saat benar-benar
+   * dijalankan.
+   */
   const targets = computed<Map<Square, Move[]>>(() => {
     const map = new Map<Square, Move[]>()
     if (selected.value === null) return map
-    for (const move of legalMoves.value) {
+
+    if (canPlay.value !== null) {
+      const piece = position.board[selected.value]
+      if (!piece) return map
+      for (const move of legalMoves.value) {
+        if (move.from !== selected.value) continue
+        const list = map.get(move.to)
+        if (list) list.push(move)
+        else map.set(move.to, [move])
+      }
+      return map
+    }
+
+    const projected = projectedPosition.value
+    const piece = projected.board[selected.value]
+    if (!piece) return map
+    for (const move of projected.pseudoMoves(colorOf(piece))) {
       if (move.from !== selected.value) continue
       const list = map.get(move.to)
       if (list) list.push(move)
@@ -114,6 +165,34 @@ export function useChessGame() {
 
   const humanColor = computed<Color | null>(() =>
     mode.value === 'lawan-komputer' ? opponent(aiColor.value) : null
+  )
+
+  /**
+   * Papan bayangan: klon posisi sungguhan dengan seluruh antrean premove sudah
+   * diterapkan berurutan. Dipakai untuk menghitung sasaran langkah premove
+   * berikutnya (mis. menyusun langkah kedua seolah langkah pertama sudah
+   * jalan) dan untuk menggambar bidak seolah sudah berpindah. Balasan lawan di
+   * antaranya tidak ikut disimulasikan — memang tidak bisa ditebak.
+   */
+  const projectedPosition = computed<Position>(() => {
+    version.value
+    const clone = position.clone()
+    const color = humanColor.value
+    if (!color) return clone
+    for (const step of premoveQueue.value) {
+      const candidates = clone.pseudoMoves(color).filter((m) => m.from === step.from && m.to === step.to)
+      if (candidates.length === 0) break
+      const move = step.promotion
+        ? (candidates.find((m) => m.promotion === step.promotion) ?? candidates[0])
+        : candidates[0]
+      clone.makeMove(move)
+    }
+    return clone
+  })
+
+  /** Papan yang ditampilkan: bidak sudah "dipindahkan" ke tujuan premove-nya, sekadar visual. */
+  const displayBoard = computed<(Piece | null)[]>(() =>
+    premoveQueue.value.length ? projectedPosition.value.board.slice() : board.value
   )
 
   /**
@@ -146,6 +225,13 @@ export function useChessGame() {
     if (status.value.over || thinking.value || pendingPromotion.value) return null
     if (mode.value === 'dua-pemain') return turn.value
     return turn.value === humanColor.value ? turn.value : null
+  })
+
+  /** Warna yang boleh menyiapkan premove sekarang — giliran mesin, tapi manusia sudah tahu mau ke mana. */
+  const premoveColor = computed<Color | null>(() => {
+    if (!premoveEnabled.value) return null
+    if (mode.value !== 'lawan-komputer' || status.value.over || humanColor.value === null) return null
+    return turn.value !== humanColor.value ? humanColor.value : null
   })
 
   const captured = computed(() => {
@@ -207,23 +293,109 @@ export function useChessGame() {
     pendingPromotion.value = null
     bump()
     scheduleAi()
+    runQueuedPremove()
   }
 
   /**
    * Coba jalankan langkah dari `from` ke `to`. Bila langkah itu adalah promosi,
    * dialog pilihan bidak dibuka dan langkah ditunda sampai pemain memilih.
+   * Di luar giliran sendiri, ini menyiapkan premove sebagai gantinya.
    */
   function tryMove(from: Square, to: Square): boolean {
-    if (canPlay.value === null) return false
-    const candidates = legalMoves.value.filter((move) => move.from === from && move.to === to)
-    if (candidates.length === 0) return false
+    if (canPlay.value !== null) {
+      const candidates = legalMoves.value.filter((move) => move.from === from && move.to === to)
+      if (candidates.length === 0) return false
 
-    if (candidates[0].promotion) {
-      pendingPromotion.value = { from, to, color: colorOf(candidates[0].piece), options: candidates }
+      if (candidates[0].promotion) {
+        pendingPromotion.value = { from, to, color: colorOf(candidates[0].piece), options: candidates }
+        return true
+      }
+      commit(candidates[0])
       return true
     }
-    commit(candidates[0])
+    return queuePremove(from, to)
+  }
+
+  /**
+   * Antre langkah untuk dijalankan otomatis begitu giliran manusia tiba. Bisa
+   * dipanggil lagi selagi antrean belum kosong untuk menambah langkah
+   * berikutnya — sasarannya dihitung dari papan bayangan (`projectedPosition`),
+   * yaitu seolah langkah-langkah yang sudah diantre lebih dulu sudah jalan.
+   * Legalitas sungguhan baru diperiksa ulang satu per satu saat dieksekusi,
+   * karena papan sesungguhnya bisa sudah berubah akibat langkah mesin.
+   */
+  function queuePremove(from: Square, to: Square): boolean {
+    const color = premoveColor.value
+    if (!color || premoveQueue.value.length >= MAX_PREMOVE_QUEUE) return false
+    const projected = projectedPosition.value
+    const piece = projected.board[from]
+    if (!piece || colorOf(piece) !== color) return false
+    const candidates = projected.pseudoMoves(color).filter((move) => move.from === from && move.to === to)
+    if (candidates.length === 0) return false
+    // Promosi premove selalu ke menteri — menunda dialog pemilihan sampai giliran
+    // sungguhan tiba akan membingungkan, karena papan saat itu sudah bisa berbeda.
+    premoveQueue.value.push({ from, to, promotion: candidates[0].promotion ? 'q' : null })
+    selected.value = null
     return true
+  }
+
+  /**
+   * Petak asal langkah PALING DEPAN di antrean — di papan bayangan petak ini
+   * tampak kosong (bidaknya sudah "pindah"), jadi mengetuknya tidak berguna
+   * untuk memilih apa pun. Dipakai sebagai gagang pembatalan yang bisa
+   * diketuk, tanpa mengganggu ketukan pada bidak bayangan itu sendiri (yang
+   * artinya menyambung antrean, bukan membatalkannya).
+   *
+   * Diperiksa juga terhadap papan bayangan, bukan cuma indeksnya: rentetan
+   * langkah yang berbalik ke petak asalnya sendiri (mis. bolak-balik dua
+   * petak) membuat petak itu terisi lagi oleh bidak bayangan, dan saat itu
+   * ketukannya harus tetap berarti "pilih", bukan "batalkan".
+   */
+  function isPremoveOrigin(square: Square): boolean {
+    return premoveQueue.value[0]?.from === square && !projectedPosition.value.board[square]
+  }
+
+  function cancelPremove(): void {
+    premoveQueue.value = []
+    if (premoveFailTimer !== null) {
+      clearTimeout(premoveFailTimer)
+      premoveFailTimer = null
+    }
+    premoveFailed.value = null
+  }
+
+  /** Kedipkan merah sesaat pada langkah yang gagal, lalu memudar sendiri. */
+  function flagPremoveFailed(step: Premove): void {
+    if (premoveFailTimer !== null) clearTimeout(premoveFailTimer)
+    premoveFailed.value = { from: step.from, to: step.to }
+    premoveFailTimer = setTimeout(() => {
+      premoveFailTimer = null
+      premoveFailed.value = null
+    }, PREMOVE_FAIL_FLASH_MS)
+  }
+
+  /**
+   * Dipanggil tiap giliran berpindah — coba jalankan langkah PALING DEPAN dari
+   * antrean premove. Kalau sudah tidak legal, sisa antrean ikut dibuang:
+   * langkah-langkah berikutnya dihitung dengan asumsi langkah ini berhasil,
+   * jadi begitu asumsinya salah, sisanya juga tidak lagi bisa dipercaya.
+   */
+  function runQueuedPremove(): void {
+    if (!premoveQueue.value.length) return
+    if (mode.value !== 'lawan-komputer' || status.value.over || turn.value !== humanColor.value) return
+
+    const pending = premoveQueue.value[0]
+    const candidates = legalMoves.value.filter((move) => move.from === pending.from && move.to === pending.to)
+    if (candidates.length === 0) {
+      flagPremoveFailed(pending)
+      premoveQueue.value = []
+      return
+    }
+    premoveQueue.value = premoveQueue.value.slice(1)
+    const move = pending.promotion
+      ? (candidates.find((m) => m.promotion === pending.promotion) ?? candidates[0])
+      : candidates[0]
+    commit(move)
   }
 
   function completePromotion(type: PromotionType): void {
@@ -239,9 +411,19 @@ export function useChessGame() {
     selected.value = null
   }
 
-  /** Klik/ketuk sebuah petak: pilih bidak, pindah, atau batalkan pilihan. */
+  /** Klik/ketuk sebuah petak: pilih bidak, pindah, batalkan pilihan, atau batalkan premove. */
   function activateSquare(square: Square): void {
     if (pendingPromotion.value) return
+
+    // Mengetuk ulang petak asal langkah premove paling depan, tanpa ada
+    // pilihan lain aktif, membatalkan seluruh antrean — cara paling langsung
+    // di layar sentuh, yang tidak punya klik kanan untuk itu. Mengetuk bidak
+    // bayangannya sendiri (petak tujuan) tetap berarti menyambung antrean.
+    if (selected.value === null && isPremoveOrigin(square)) {
+      cancelPremove()
+      return
+    }
+
     const playable = canPlay.value
 
     if (selected.value !== null) {
@@ -255,8 +437,22 @@ export function useChessGame() {
       }
     }
 
-    const piece = position.board[square]
-    selected.value = piece && playable && colorOf(piece) === playable ? square : null
+    if (playable) {
+      const piece = position.board[square]
+      selected.value = piece && colorOf(piece) === playable ? square : null
+      return
+    }
+
+    const color = premoveColor.value
+    if (!color) {
+      selected.value = null
+      return
+    }
+    // Sasaran seleksi premove dibaca dari papan bayangan, bukan papan
+    // sungguhan — supaya bidak yang "sudah dipindahkan" oleh premove
+    // sebelumnya tetap bisa dipilih lagi untuk menyusun langkah berikutnya.
+    const piece = projectedPosition.value.board[square]
+    selected.value = piece && colorOf(piece) === color ? square : null
   }
 
   function dropPiece(from: Square, to: Square): void {
@@ -271,6 +467,7 @@ export function useChessGame() {
   function undo(): void {
     if (!history.value.length) return
     invalidateSearch()
+    cancelPremove()
 
     const stopAt = humanColor.value
     do {
@@ -287,6 +484,7 @@ export function useChessGame() {
 
   function reset(startFen?: string): void {
     invalidateSearch()
+    cancelPremove()
     position.load(startFen ?? START_FEN)
     history.value = []
     lastMove.value = null
@@ -425,13 +623,19 @@ export function useChessGame() {
 
   watch([mode, aiColor, elo], () => {
     invalidateSearch()
+    cancelPremove()
     scheduleAi()
+  })
+
+  watch(premoveEnabled, (enabled) => {
+    if (!enabled) cancelPremove()
   })
 
   onScopeDispose(() => {
     invalidateSearch()
     worker?.terminate()
     worker = null
+    if (premoveFailTimer !== null) clearTimeout(premoveFailTimer)
   })
 
   scheduleAi()
@@ -439,6 +643,7 @@ export function useChessGame() {
   return {
     // state
     board,
+    displayBoard,
     turn,
     status,
     fen,
@@ -454,6 +659,10 @@ export function useChessGame() {
     humanColor,
     setupLocked,
     pendingPromotion,
+    premoveQueue,
+    premoveFailed,
+    premoveColor,
+    premoveEnabled,
     thinking,
     lastSearch,
     // pengaturan
@@ -469,6 +678,7 @@ export function useChessGame() {
     dropPiece,
     completePromotion,
     cancelPromotion,
+    cancelPremove,
     undo,
     reset,
     flipBoard,

@@ -2,11 +2,13 @@
 
 [![CI](https://github.com/Yunnie-pin/chess-js/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Yunnie-pin/chess-js/actions/workflows/ci.yml)
 
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/Yunnie-pin/chess-js?color=blue&label=release)](https://github.com/Yunnie-pin/chess-js/releases/latest)
+
 Chess in the browser: play the computer, or play a friend online through a room.
 The engine, the AI, and the server are all written from scratch — no chess
 library.
 
-![Chess board in a gold and ivory theme, control panel on the right, and a portrait of Mari in the background](https://i.imgur.com/jRiarIT.png)
+![Chess board in a gold and ivory theme, control panel on the right, and a portrait of Mari in the background](https://i.imgur.com/BMBWwKk.png)
 
 ## Running it
 

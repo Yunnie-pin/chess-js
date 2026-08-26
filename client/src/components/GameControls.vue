@@ -12,6 +12,7 @@ const { t } = useI18n()
 const mode = defineModel<GameMode>('mode', { required: true })
 const elo = defineModel<EloRating>('elo', { required: true })
 const showHints = defineModel<boolean>('showHints', { required: true })
+const premoveEnabled = defineModel<boolean>('premoveEnabled', { required: true })
 
 defineProps<{
   humanColor: Color | null
@@ -102,6 +103,11 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
     <label class="switch">
       <input v-model="showHints" type="checkbox" />
       <span>{{ t('controls.showHints') }}</span>
+    </label>
+
+    <label class="switch">
+      <input v-model="premoveEnabled" type="checkbox" />
+      <span>{{ t('controls.premove') }}</span>
     </label>
 
     <div class="buttons">

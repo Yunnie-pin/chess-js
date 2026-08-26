@@ -60,6 +60,9 @@ export const en: Messages = {
     'Opponent and colour are locked while a game is in progress. Start a new game to change them.',
   'controls.playAs': 'You play as',
   'controls.showHints': 'Show move hints',
+  'controls.premove': 'Enable premove',
+  'premove.queued': 'Premove queued',
+  'premove.cancel': 'Cancel',
   'controls.newGame': 'New game',
   'controls.undo': 'Undo move',
 

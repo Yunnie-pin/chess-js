@@ -26,8 +26,11 @@ type AppMode = 'offline' | 'online'
 
 const { t, formatNumber } = useI18n()
 
-const offline = useChessGame()
-const online = useOnlineGame(resolveServerUrl())
+// Sakelar premove dibagi ke kedua composable, supaya satu checkbox berlaku
+// di mode offline maupun online sekaligus — sama seperti showHints sekarang.
+const premoveEnabled = ref(true)
+const offline = useChessGame({ premoveEnabled })
+const online = useOnlineGame(resolveServerUrl(), { premoveEnabled })
 
 const appMode = ref<AppMode>('offline')
 const orientation = ref<Color>('w')
@@ -82,8 +85,10 @@ watch(
 // Sumber data papan — offline atau online, bentuknya sama
 // ---------------------------------------------------------------------------
 
+// Papan bayangan: kalau ada premove diantre, bidaknya sudah tampak "berpindah"
+// ke tujuannya walau langkah sungguhannya belum dikirim/dijalankan.
 const board = computed<(Piece | null)[]>(() =>
-  isOnline.value ? online.board.value : offline.board.value
+  isOnline.value ? online.displayBoard.value : offline.displayBoard.value
 )
 const selected = computed<Square | null>(() =>
   isOnline.value ? online.selected.value : offline.selected.value
@@ -99,6 +104,23 @@ const checkSquare = computed<Square | null>(() =>
 )
 const canPlay = computed<Color | null>(() =>
   isOnline.value ? online.canPlay.value : offline.canPlay.value
+)
+const premoveColor = computed<Color | null>(() =>
+  isOnline.value ? online.premoveColor.value : offline.premoveColor.value
+)
+const premoveQueue = computed<{ from: Square; to: Square }[]>(() =>
+  (isOnline.value ? online.premoveQueue.value : offline.premoveQueue.value).map((step) => ({
+    from: step.from,
+    to: step.to
+  }))
+)
+const premoveFailed = computed<{ from: Square; to: Square } | null>(() =>
+  isOnline.value ? online.premoveFailed.value : offline.premoveFailed.value
+)
+const premoveBannerText = computed(() =>
+  premoveQueue.value.length > 1
+    ? `${t('premove.queued')} (${premoveQueue.value.length})`
+    : t('premove.queued')
 )
 const turn = computed<Color>(() => (isOnline.value ? online.turn.value : offline.turn.value))
 const captured = computed<Record<Color, PieceType[]>>(() =>
@@ -130,6 +152,8 @@ const completePromotion = (type: 'q' | 'r' | 'b' | 'n') =>
 
 const cancelPromotion = () =>
   isOnline.value ? online.cancelPromotion() : offline.cancelPromotion()
+
+const cancelPremove = () => (isOnline.value ? online.cancelPremove() : offline.cancelPremove())
 
 // ---------------------------------------------------------------------------
 // Baris status
@@ -256,6 +280,7 @@ function onKeydown(event: KeyboardEvent): void {
   } else if (event.key === 'Escape') {
     if (isOnline.value) online.selected.value = null
     else offline.selected.value = null
+    cancelPremove()
   } else if (!isOnline.value && (event.key === 'ArrowLeft' || (event.ctrlKey && event.key.toLowerCase() === 'z'))) {
     // Undo hanya untuk permainan lokal — di online, papan milik server.
     event.preventDefault()
@@ -326,9 +351,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :last-move="lastMove"
           :check-square="checkSquare"
           :playable="canPlay"
+          :premove-color="premoveColor"
+          :premove-queue="premoveQueue"
+          :premove-failed="premoveFailed"
           :show-hints="offline.showHints.value"
           @activate="activateSquare"
           @drop="dropPiece"
+          @right-click="cancelPremove"
         />
 
         <div class="player">
@@ -350,6 +379,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <div class="status" :class="`status--${statusTone}`">
           <span v-if="offline.thinking.value && !isOnline" class="status__spinner" aria-hidden="true" />
           <span>{{ statusText }}</span>
+        </div>
+
+        <div v-if="premoveQueue.length" class="premove-banner">
+          <span>{{ premoveBannerText }}</span>
+          <button type="button" class="premove-banner__cancel" @click="cancelPremove">
+            {{ t('premove.cancel') }}
+          </button>
         </div>
 
         <p v-if="isOnline && online.error.value" class="alert" role="alert">
@@ -384,6 +420,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           v-model:mode="offline.mode.value"
           v-model:elo="offline.elo.value"
           v-model:show-hints="offline.showHints.value"
+          v-model:premove-enabled="premoveEnabled"
           :human-color="offline.humanColor.value"
           :can-undo="offline.history.value.length > 0"
           :busy="offline.thinking.value"
@@ -645,6 +682,42 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   background: var(--danger-soft);
   border: 1px solid var(--danger-line);
   border-radius: 0.5rem;
+}
+
+/*
+ * Selalu terlihat begitu ada premove diantre — bukan cuma sorotan di papan —
+ * supaya jelas ada langkah menunggu dan ada tombol nyata untuk membatalkannya.
+ * Klik kanan/Esc tetap jalan, tapi keduanya tidak ada di layar sentuh.
+ */
+.premove-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.premove-banner__cancel {
+  padding: 0.3rem 0.6rem;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.premove-banner__cancel:hover {
+  background: var(--surface-hover);
+  border-color: var(--text-muted);
 }
 
 .flip {

@@ -75,6 +75,9 @@ export const id = {
     'Lawan dan warna terkunci selama pertandingan berjalan. Mulai permainan baru untuk menggantinya.',
   'controls.playAs': 'Anda bermain sebagai',
   'controls.showHints': 'Tampilkan petunjuk langkah',
+  'controls.premove': 'Aktifkan premove',
+  'premove.queued': 'Premove menunggu giliran',
+  'premove.cancel': 'Batalkan',
   'controls.newGame': 'Permainan baru',
   'controls.undo': 'Batalkan langkah',
 

@@ -368,3 +368,170 @@ test('permainan baru mengembalikan kebebasan memilih warna', () =>
     game.playAs('b')
     assert.equal(game.humanColor.value, 'b')
   }))
+
+// ---------------------------------------------------------------------------
+// Premove
+// ---------------------------------------------------------------------------
+
+test('premove diantre selagi giliran mesin, lalu dijalankan otomatis begitu giliran sendiri tiba', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e2', 'e4') // langkah sungguhan; giliran sekarang milik mesin
+    assert.equal(game.thinking.value, true)
+
+    // Diantre selagi mesin masih berpikir — bukan langkah sungguhan.
+    click(game, 'd2', 'd4')
+    assert.equal(game.premoveQueue.value.length, 1)
+    assert.deepEqual(game.premoveQueue.value[0], { from: at('d2'), to: at('d4'), promotion: null })
+    assert.equal(game.history.value.length, 1, 'premove belum benar-benar jalan')
+    assert.equal(game.selected.value, null)
+
+    // d2-d4 mustahil terganggu balasan hitam mana pun dari posisi awal —
+    // tidak ada bidak hitam yang bisa menjangkau d2/d4 dalam satu langkah
+    // sesudah 1.e4 — jadi hasilnya bisa dipastikan tanpa menebak keputusan
+    // pencarian mesin.
+    await waitForReply(game)
+
+    assert.equal(game.premoveQueue.value.length, 0, 'premove sudah dieksekusi dan dibuang dari antrean')
+    assert.equal(game.history.value.length, 4, 'e4, balasan mesin, d4 (premove), balasan mesin lagi')
+    assert.equal(game.history.value[2].san, 'd4')
+    assert.equal(game.history.value[2].color, 'w')
+  }))
+
+test('premove yang sudah tidak legal gagal dan menyalakan sorotan gagal, bukan dijalankan diam-diam', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    // Raja hitam terkurung total (nol langkah legal, dan bukan skak), sehingga
+    // pion a7 adalah SATU-SATUNYA langkah legal di seluruh posisi: a7-a6.
+    // Balasan mesin jadi bisa dipastikan 100%, di level berapa pun.
+    game.reset('k7/p1K5/8/P7/8/8/8/8 b - - 0 1')
+
+    // a5-a6 sah diantre SEKARANG karena a6 masih kosong.
+    click(game, 'a5', 'a6')
+    assert.equal(game.premoveQueue.value.length, 1)
+
+    await waitForReply(game)
+
+    // ...tapi begitu mesin terpaksa memainkan a7-a6, a6 terisi bidak lawan,
+    // dan pion putih tidak bisa lagi mendorong lurus ke petak yang terisi.
+    assert.equal(game.premoveQueue.value.length, 0, 'premove yang gagal dibuang dari antrean')
+    assert.equal(game.history.value.length, 1, 'tidak ada langkah putih tambahan yang jalan')
+    assert.equal(game.history.value[0].san, 'a6')
+    assert.equal(game.history.value[0].color, 'b')
+    assert.deepEqual(game.premoveFailed.value, { from: at('a5'), to: at('a6') })
+  }))
+
+test('premove bisa dibatalkan lewat cancelPremove sebelum giliran sendiri tiba', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e2', 'e4')
+    click(game, 'd2', 'd4')
+    assert.equal(game.premoveQueue.value.length, 1)
+
+    game.cancelPremove()
+    assert.equal(game.premoveQueue.value.length, 0)
+
+    await waitForReply(game)
+    assert.equal(game.history.value.length, 2, 'premove yang sudah dibatalkan tidak ikut jalan')
+  }))
+
+test('mengetuk ulang petak asal premove membatalkannya', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e2', 'e4')
+    click(game, 'd2', 'd4')
+    assert.equal(game.premoveQueue.value.length, 1)
+
+    game.activateSquare(at('d2')) // ketuk ulang petak asal, tanpa seleksi lain aktif
+    assert.equal(game.premoveQueue.value.length, 0)
+    assert.equal(game.selected.value, null)
+  }))
+
+test('premove bisa diantre berantai, dihitung dari papan bayangan langkah sebelumnya', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e2', 'e4') // langkah sungguhan
+    // e4-e5 diantre dulu, lalu e5-e6 disusun seolah bidaknya sudah di e5.
+    click(game, 'e4', 'e5')
+    click(game, 'e5', 'e6')
+
+    assert.deepEqual(
+      game.premoveQueue.value.map((step) => [step.from, step.to]),
+      [
+        [at('e4'), at('e5')],
+        [at('e5'), at('e6')]
+      ]
+    )
+    // Papan bayangan menampilkan bidak sudah di e6; posisi sungguhan belum tersentuh.
+    assert.equal(game.displayBoard.value[at('e6')], 'wp')
+    assert.equal(game.displayBoard.value[at('e4')], null)
+    assert.equal(game.board.value[at('e4')], 'wp', 'posisi sungguhan belum berubah')
+  }))
+
+test('antrean premove dibatasi panjangnya', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    // Posisi dengan banyak ruang kosong di depan raja agar mudah menyusun
+    // rentetan langkah raja yang masing-masing tetap legal secara pseudo.
+    // Pion h7 sekadar mencegah posisi ini dianggap remis materi tidak cukup
+    // (raja lawan raja saja) — jauh dari e1/e2, tidak ikut campur.
+    game.reset('4k3/7p/8/8/8/8/8/4K3 w - - 0 1')
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e1', 'e2') // langkah sungguhan, giliran berpindah ke hitam
+    // Raja bolak-balik antar dua petak — tiap langkah tetap pseudo-legal di
+    // papan bayangannya sendiri, sehingga antrean bisa tumbuh sampai batasnya.
+    // Lima langkah berturut-turut mengisi antrean sampai penuh (MAX = 5).
+    click(game, 'e2', 'e1')
+    click(game, 'e1', 'e2')
+    click(game, 'e2', 'e1')
+    click(game, 'e1', 'e2')
+    click(game, 'e2', 'e1')
+
+    assert.equal(game.premoveQueue.value.length, 5, 'sudah mencapai MAX_PREMOVE_QUEUE')
+
+    click(game, 'e1', 'e2') // langkah keenam ditolak, antrean sudah penuh
+    assert.equal(game.premoveQueue.value.length, 5)
+  }))
+
+test('mematikan sakelar premove membatalkan yang sudah diantre', () =>
+  withGame(async (game) => {
+    game.mode.value = 'lawan-komputer'
+    game.elo.value = 400
+    game.playAs('w')
+    await nextTick()
+
+    click(game, 'e2', 'e4')
+    click(game, 'd2', 'd4')
+    assert.equal(game.premoveQueue.value.length, 1)
+
+    game.premoveEnabled.value = false
+    await nextTick() // watch(premoveEnabled, ...) berjalan pada tick berikutnya
+    assert.equal(game.premoveQueue.value.length, 0, 'antrean dibuang begitu sakelar dimatikan')
+
+    // Dan selagi mati, tidak ada premove baru yang bisa diantre.
+    click(game, 'g1', 'f3')
+    assert.equal(game.premoveQueue.value.length, 0)
+  }))

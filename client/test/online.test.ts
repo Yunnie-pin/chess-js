@@ -214,3 +214,113 @@ test('pemain ketiga menjadi penonton dan papannya terkunci', async () => {
   await waitUntil(() => watcher.historyRows.value.length === 1, 'penonton mengikuti langkah')
   assert.equal(watcher.historyRows.value[0].white?.san, 'd4')
 })
+
+// ---------------------------------------------------------------------------
+// Premove
+// ---------------------------------------------------------------------------
+
+test('premove online diantre selagi giliran lawan, lalu terkirim otomatis begitu giliran sendiri tiba', async () => {
+  const { white, black } = await pairedClients()
+
+  // Hitam menyiapkan premove selagi masih giliran putih.
+  black.activateSquare(at('e7'))
+  black.activateSquare(at('e5'))
+  assert.equal(black.premoveQueue.value.length, 1)
+  assert.deepEqual(black.premoveQueue.value[0], { from: at('e7'), to: at('e5'), promotion: null })
+  assert.equal(black.premoveColor.value, 'b')
+
+  white.activateSquare(at('e2'))
+  white.activateSquare(at('e4'))
+  await waitUntil(
+    () => (white.roomState.value?.history.length ?? 0) === 2,
+    'premove hitam terkirim dan tercatat server'
+  )
+
+  assert.equal(black.premoveQueue.value.length, 0)
+  assert.equal(white.roomState.value?.history[1]?.san, 'e5')
+  assert.equal(black.roomState.value?.history[1]?.san, 'e5', 'kedua klien melihat hasil yang sama')
+})
+
+test('premove online yang sudah tidak legal gagal, bukan dikirim diam-diam', async () => {
+  const { white, black } = await pairedClients()
+
+  // 1. e4 d6 — d6 sekadar mengisi giliran pertama hitam, supaya pion e7 tetap
+  // di tempat untuk premove berikutnya.
+  white.activateSquare(at('e2'))
+  white.activateSquare(at('e4'))
+  await waitUntil(() => (white.roomState.value?.history.length ?? 0) === 1, 'langkah 1 putih sampai')
+
+  black.activateSquare(at('d7'))
+  black.activateSquare(at('d6'))
+  await waitUntil(() => (white.roomState.value?.history.length ?? 0) === 2, 'langkah 1 hitam sampai')
+
+  // Hitam mengantre e7-e5 sekarang, selagi e5 masih kosong.
+  black.activateSquare(at('e7'))
+  black.activateSquare(at('e5'))
+  assert.equal(black.premoveQueue.value.length, 1)
+
+  // Tapi putih justru mendorong pionnya sendiri ke e5 lebih dulu...
+  white.activateSquare(at('e4'))
+  white.activateSquare(at('e5'))
+  await waitUntil(() => (white.roomState.value?.history.length ?? 0) === 3, 'langkah 2 putih sampai')
+
+  // ...jadi begitu giliran hitam benar-benar tiba, dorongan lurus e7-e5 sudah
+  // tidak legal (petaknya terisi bidak lawan, dan pion tidak bisa menangkap lurus).
+  await waitUntil(() => black.premoveQueue.value.length === 0, 'premove yang gagal dibuang dari antrean')
+  assert.deepEqual(black.premoveFailed.value, { from: at('e7'), to: at('e5') })
+  assert.equal(white.roomState.value?.history.length, 3, 'tidak ada langkah hitam tambahan yang terkirim')
+})
+
+test('premove online bisa dibatalkan lewat cancelPremove sebelum giliran sendiri tiba', async () => {
+  const { white, black } = await pairedClients()
+
+  black.activateSquare(at('e7'))
+  black.activateSquare(at('e5'))
+  assert.equal(black.premoveQueue.value.length, 1)
+
+  black.cancelPremove()
+  assert.equal(black.premoveQueue.value.length, 0)
+
+  white.activateSquare(at('e2'))
+  white.activateSquare(at('e4'))
+  await waitUntil(() => (white.roomState.value?.history.length ?? 0) === 1, 'langkah putih sampai')
+
+  // Sengaja diberi jeda: kalau premove yang sudah dibatalkan ternyata masih
+  // terkirim, ini akan menangkapnya.
+  await sleep(300)
+  assert.equal(white.roomState.value?.history.length, 1, 'premove yang sudah dibatalkan tidak ikut terkirim')
+})
+
+test('mengetuk ulang petak asal premove online membatalkannya', async () => {
+  const { black } = await pairedClients()
+
+  black.activateSquare(at('e7'))
+  black.activateSquare(at('e5'))
+  assert.equal(black.premoveQueue.value.length, 1)
+
+  black.activateSquare(at('e7')) // ketuk ulang petak asal, tanpa seleksi lain aktif
+  assert.equal(black.premoveQueue.value.length, 0)
+  assert.equal(black.selected.value, null)
+})
+
+test('premove online bisa diantre berantai, dihitung dari papan bayangan langkah sebelumnya', async () => {
+  const { black } = await pairedClients()
+
+  // e7-e5 diantre dulu, lalu e5-e4 disusun seolah bidaknya sudah di e5 —
+  // pion hitam melangkah maju ke arah rank yang mengecil, bukan membesar.
+  black.activateSquare(at('e7'))
+  black.activateSquare(at('e5'))
+  black.activateSquare(at('e5'))
+  black.activateSquare(at('e4'))
+
+  assert.deepEqual(
+    black.premoveQueue.value.map((step) => [step.from, step.to]),
+    [
+      [at('e7'), at('e5')],
+      [at('e5'), at('e4')]
+    ]
+  )
+  assert.equal(black.displayBoard.value[at('e4')], 'bp')
+  assert.equal(black.displayBoard.value[at('e7')], null)
+  assert.equal(black.board.value[at('e7')], 'bp', 'posisi sungguhan belum berubah')
+})

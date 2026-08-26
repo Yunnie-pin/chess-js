@@ -8,7 +8,8 @@
  * papan kedua pemain berbeda isi.
  */
 
-import { computed, onScopeDispose, ref, shallowRef } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
+import type { Ref } from 'vue'
 
 import { readStorage, writeStorage } from '../storage.ts'
 import { t } from '../i18n/index.ts'
@@ -30,7 +31,19 @@ export interface PendingPromotion {
   color: Color
 }
 
+export interface Premove {
+  from: Square
+  to: Square
+  promotion: PromotionType | null
+}
+
 export type ConnectionStatus = 'terputus' | 'menyambung' | 'tersambung' | 'gagal'
+
+/** Batas panjang antrean premove — cukup untuk beberapa langkah beruntun, tidak perlu tak terhingga. */
+const MAX_PREMOVE_QUEUE = 5
+
+/** Berapa lama sorotan merah "premove gagal" tetap tampil sebelum memudar. */
+const PREMOVE_FAIL_FLASH_MS = 650
 
 /** Nama pemain bertahan antar muat ulang; token menjaga kursi di room. */
 const NAME_KEY = 'catur.nama'
@@ -48,7 +61,12 @@ type ErrorState =
   | { code: ServerErrorCode; params?: undefined }
   | { code: ClientErrorCode; params: { url: string } }
 
-export function useOnlineGame(serverUrl: string) {
+export interface UseOnlineGameOptions {
+  /** Sakelar premove, dibagi dari luar (App.vue) supaya nilainya sama dengan mode offline. */
+  premoveEnabled?: Ref<boolean>
+}
+
+export function useOnlineGame(serverUrl: string, options: UseOnlineGameOptions = {}) {
   const status = ref<ConnectionStatus>('terputus')
   const roomState = shallowRef<RoomState | null>(null)
   const seat = ref<Seat | null>(null)
@@ -71,6 +89,12 @@ export function useOnlineGame(serverUrl: string) {
   const lastMove = shallowRef<Move | null>(null)
   const selected = ref<Square | null>(null)
   const pendingPromotion = shallowRef<PendingPromotion | null>(null)
+  /** Antrean premove, dijalankan satu per satu begitu giliran sendiri benar-benar tiba. */
+  const premoveQueue = ref<Premove[]>([])
+  /** Langkah premove yang baru saja gagal (tidak legal lagi) — untuk kedipan merah sesaat. */
+  const premoveFailed = shallowRef<{ from: Square; to: Square } | null>(null)
+  let premoveFailTimer: ReturnType<typeof setTimeout> | null = null
+  const premoveEnabled = options.premoveEnabled ?? ref(true)
 
   let socket: WebSocket | null = null
   let reconnectAttempt = 0
@@ -110,10 +134,73 @@ export function useOnlineGame(serverUrl: string) {
     return turn.value === myColor.value ? myColor.value : null
   })
 
+  /** Warna yang boleh menyiapkan premove sekarang — giliran lawan, tapi kursi dan permainan masih aktif. */
+  const premoveColor = computed<Color | null>(() => {
+    if (!premoveEnabled.value) return null
+    const room = roomState.value
+    if (!room || room.waiting || room.resignedBy || status_.value?.over) return null
+    if (isSpectator.value || !myColor.value) return null
+    return turn.value !== myColor.value ? myColor.value : null
+  })
+
+  /**
+   * Papan bayangan: klon posisi dari server dengan seluruh antrean premove
+   * sudah diterapkan berurutan. Dipakai untuk menghitung sasaran langkah
+   * premove berikutnya (mis. menyusun langkah kedua seolah langkah pertama
+   * sudah jalan) dan untuk menggambar bidak seolah sudah berpindah. Balasan
+   * lawan di antaranya tidak ikut disimulasikan — memang tidak bisa ditebak.
+   */
+  const projectedPosition = computed<Position | null>(() => {
+    if (!position.value) return null
+    const clone = position.value.clone()
+    const color = myColor.value
+    if (!color) return clone
+    for (const step of premoveQueue.value) {
+      const candidates = clone.pseudoMoves(color).filter((m) => m.from === step.from && m.to === step.to)
+      if (candidates.length === 0) break
+      const move = step.promotion
+        ? (candidates.find((m) => m.promotion === step.promotion) ?? candidates[0])
+        : candidates[0]
+      clone.makeMove(move)
+    }
+    return clone
+  })
+
+  /** Papan yang ditampilkan: bidak sudah "dipindahkan" ke tujuan premove-nya, sekadar visual. */
+  const displayBoard = computed<(Piece | null)[]>(() => {
+    if (!premoveQueue.value.length || !projectedPosition.value) return board.value
+    return projectedPosition.value.board.slice()
+  })
+
+  /**
+   * Petak tujuan dari bidak yang sedang dipilih. Saat gilirannya sendiri, ini
+   * langkah legal sungguhan. Saat giliran lawan, ini pola gerak bidak di papan
+   * bayangan (pseudo-legal, dengan antrean premove yang sudah ada ikut
+   * diperhitungkan) — dipakai untuk menyiapkan premove berikutnya, dan
+   * diperiksa ulang lewat kondisi dari server saat benar-benar dijalankan.
+   */
   const targets = computed<Map<Square, Move[]>>(() => {
     const map = new Map<Square, Move[]>()
     if (selected.value === null) return map
-    for (const move of legalMoves.value) {
+
+    if (canPlay.value !== null) {
+      if (!position.value) return map
+      const piece = position.value.board[selected.value]
+      if (!piece) return map
+      for (const move of legalMoves.value) {
+        if (move.from !== selected.value) continue
+        const list = map.get(move.to)
+        if (list) list.push(move)
+        else map.set(move.to, [move])
+      }
+      return map
+    }
+
+    const projected = projectedPosition.value
+    if (!projected) return map
+    const piece = projected.board[selected.value]
+    if (!piece) return map
+    for (const move of projected.pseudoMoves(piece[0] as Color)) {
       if (move.from !== selected.value) continue
       const list = map.get(move.to)
       if (list) list.push(move)
@@ -191,6 +278,44 @@ export function useOnlineGame(serverUrl: string) {
           doublePush: false
         } as Move)
       : null
+
+    runQueuedPremove()
+  }
+
+  /**
+   * Dipanggil tiap kondisi baru datang dari server — coba kirim langkah PALING
+   * DEPAN dari antrean premove. Kalau sudah tidak legal, sisa antrean ikut
+   * dibuang: langkah-langkah berikutnya dihitung dengan asumsi langkah ini
+   * berhasil, jadi begitu asumsinya salah, sisanya juga tidak lagi bisa
+   * dipercaya.
+   */
+  function runQueuedPremove(): void {
+    if (!premoveQueue.value.length || canPlay.value === null) return
+
+    const pending = premoveQueue.value[0]
+    const candidates = legalMoves.value.filter(
+      (move) => move.from === pending.from && move.to === pending.to
+    )
+    if (candidates.length === 0) {
+      flagPremoveFailed(pending)
+      premoveQueue.value = []
+      return
+    }
+    premoveQueue.value = premoveQueue.value.slice(1)
+    const move = pending.promotion
+      ? (candidates.find((m) => m.promotion === pending.promotion) ?? candidates[0])
+      : candidates[0]
+    playMove({ from: move.from, to: move.to, promotion: move.promotion })
+  }
+
+  /** Kedipkan merah sesaat pada langkah yang gagal, lalu memudar sendiri. */
+  function flagPremoveFailed(step: Premove): void {
+    if (premoveFailTimer !== null) clearTimeout(premoveFailTimer)
+    premoveFailed.value = { from: step.from, to: step.to }
+    premoveFailTimer = setTimeout(() => {
+      premoveFailTimer = null
+      premoveFailed.value = null
+    }, PREMOVE_FAIL_FLASH_MS)
   }
 
   // ------------------------------------------------------------------
@@ -323,22 +448,71 @@ export function useOnlineGame(serverUrl: string) {
   /**
    * Mencoba menjalankan langkah. Langkah promosi ditahan dulu supaya pemain bisa
    * memilih bidaknya — tanpa ini, mengirim `promotion: null` membuat server
-   * memakai menteri secara diam-diam dan pilihan pemain hilang.
+   * memakai menteri secara diam-diam dan pilihan pemain hilang. Di luar giliran
+   * sendiri, ini menyiapkan premove sebagai gantinya.
    */
   function tryMove(from: Square, to: Square): boolean {
-    if (canPlay.value === null) return false
-    const candidates = legalMoves.value.filter((move) => move.from === from && move.to === to)
-    if (candidates.length === 0) return false
+    if (canPlay.value !== null) {
+      const candidates = legalMoves.value.filter((move) => move.from === from && move.to === to)
+      if (candidates.length === 0) return false
 
-    if (candidates[0].promotion) {
-      pendingPromotion.value = { from, to, color: canPlay.value }
+      if (candidates[0].promotion) {
+        pendingPromotion.value = { from, to, color: canPlay.value }
+        selected.value = null
+        return true
+      }
+      playMove({ from, to, promotion: null })
       selected.value = null
+      pendingPromotion.value = null
       return true
     }
-    playMove({ from, to, promotion: null })
+    return queuePremove(from, to)
+  }
+
+  /**
+   * Antre langkah untuk dikirim otomatis begitu giliran sendiri tiba. Bisa
+   * dipanggil lagi selagi antrean belum kosong untuk menambah langkah
+   * berikutnya — sasarannya dihitung dari papan bayangan (`projectedPosition`),
+   * yaitu seolah langkah-langkah yang sudah diantre lebih dulu sudah jalan.
+   * Legalitas sungguhan baru diperiksa ulang satu per satu lewat kondisi dari
+   * server saat benar-benar dijalankan.
+   */
+  function queuePremove(from: Square, to: Square): boolean {
+    const color = premoveColor.value
+    const projected = projectedPosition.value
+    if (!color || !projected || premoveQueue.value.length >= MAX_PREMOVE_QUEUE) return false
+    const piece = projected.board[from]
+    if (!piece || piece[0] !== color) return false
+    const candidates = projected.pseudoMoves(color).filter((move) => move.from === from && move.to === to)
+    if (candidates.length === 0) return false
+    premoveQueue.value.push({ from, to, promotion: candidates[0].promotion ? 'q' : null })
     selected.value = null
-    pendingPromotion.value = null
     return true
+  }
+
+  /**
+   * Petak asal langkah PALING DEPAN di antrean — di papan bayangan petak ini
+   * tampak kosong (bidaknya sudah "pindah"), jadi mengetuknya tidak berguna
+   * untuk memilih apa pun. Dipakai sebagai gagang pembatalan yang bisa
+   * diketuk, tanpa mengganggu ketukan pada bidak bayangan itu sendiri (yang
+   * artinya menyambung antrean, bukan membatalkannya).
+   *
+   * Diperiksa juga terhadap papan bayangan, bukan cuma indeksnya: rentetan
+   * langkah yang berbalik ke petak asalnya sendiri (mis. bolak-balik dua
+   * petak) membuat petak itu terisi lagi oleh bidak bayangan, dan saat itu
+   * ketukannya harus tetap berarti "pilih", bukan "batalkan".
+   */
+  function isPremoveOrigin(square: Square): boolean {
+    return premoveQueue.value[0]?.from === square && !projectedPosition.value?.board[square]
+  }
+
+  function cancelPremove(): void {
+    premoveQueue.value = []
+    if (premoveFailTimer !== null) {
+      clearTimeout(premoveFailTimer)
+      premoveFailTimer = null
+    }
+    premoveFailed.value = null
   }
 
   function completePromotion(type: PromotionType): void {
@@ -353,9 +527,19 @@ export function useOnlineGame(serverUrl: string) {
     pendingPromotion.value = null
   }
 
-  /** Klik petak: pilih bidak sendiri, atau jalankan langkah ke petak yang sah. */
+  /** Klik petak: pilih bidak sendiri, jalankan langkah, atau batalkan premove. */
   function activateSquare(square: Square): void {
     if (pendingPromotion.value) return
+
+    // Mengetuk ulang petak asal langkah premove paling depan, tanpa ada
+    // pilihan lain aktif, membatalkan seluruh antrean — cara paling langsung
+    // di layar sentuh, yang tidak punya klik kanan untuk itu. Mengetuk bidak
+    // bayangannya sendiri (petak tujuan) tetap berarti menyambung antrean.
+    if (selected.value === null && isPremoveOrigin(square)) {
+      cancelPremove()
+      return
+    }
+
     const playable = canPlay.value
 
     if (selected.value !== null) {
@@ -368,8 +552,24 @@ export function useOnlineGame(serverUrl: string) {
         return
       }
     }
-    const piece = position.value?.board[square]
-    selected.value = piece && playable && piece[0] === playable ? square : null
+
+    if (playable) {
+      const piece = position.value?.board[square]
+      selected.value = piece && piece[0] === playable ? square : null
+      return
+    }
+
+    const color = premoveColor.value
+    const projected = projectedPosition.value
+    if (!color || !projected) {
+      selected.value = null
+      return
+    }
+    // Sasaran seleksi premove dibaca dari papan bayangan, bukan papan dari
+    // server — supaya bidak yang "sudah dipindahkan" oleh premove sebelumnya
+    // tetap bisa dipilih lagi untuk menyusun langkah berikutnya.
+    const piece = projected.board[square]
+    selected.value = piece && piece[0] === color ? square : null
   }
 
   function dropPiece(from: Square, to: Square): void {
@@ -393,6 +593,7 @@ export function useOnlineGame(serverUrl: string) {
     lastMove.value = null
     selected.value = null
     pendingPromotion.value = null
+    cancelPremove()
   }
 
   function disconnect(): void {
@@ -406,7 +607,14 @@ export function useOnlineGame(serverUrl: string) {
     status.value = 'terputus'
   }
 
-  onScopeDispose(disconnect)
+  watch(premoveEnabled, (enabled) => {
+    if (!enabled) cancelPremove()
+  })
+
+  onScopeDispose(() => {
+    disconnect()
+    if (premoveFailTimer !== null) clearTimeout(premoveFailTimer)
+  })
 
   return {
     // sambungan
@@ -433,6 +641,7 @@ export function useOnlineGame(serverUrl: string) {
     rematch,
     // papan
     board,
+    displayBoard,
     turn,
     gameStatus: status_,
     legalMoves,
@@ -450,7 +659,13 @@ export function useOnlineGame(serverUrl: string) {
     // promosi
     pendingPromotion,
     completePromotion,
-    cancelPromotion
+    cancelPromotion,
+    // premove
+    premoveQueue,
+    premoveFailed,
+    premoveColor,
+    premoveEnabled,
+    cancelPremove
   }
 }
 
