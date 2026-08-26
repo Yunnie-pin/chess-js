@@ -11,6 +11,7 @@ export const en: Messages = {
   'app.modeLocal': 'Local',
   'app.modeOnline': 'Online',
   'app.language': 'Language',
+  'settings.title': 'Settings',
 
   'color.w': 'White',
   'color.b': 'Black',
@@ -60,8 +61,10 @@ export const en: Messages = {
   'controls.setupLocked':
     'Opponent and colour are locked while a game is in progress. Start a new game to change them.',
   'controls.playAs': 'You play as',
+  'controls.playAids': 'Play aids',
   'controls.showHints': 'Show move hints',
   'controls.premove': 'Enable premove',
+  'controls.undoEnabled': 'Enable undo',
   'premove.queued': 'Premove queued',
   'premove.cancel': 'Cancel',
   'controls.newGame': 'New game',

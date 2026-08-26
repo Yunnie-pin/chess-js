@@ -65,6 +65,13 @@ export interface UseChessGameOptions {
    */
   premoveEnabled?: Ref<boolean>
   /**
+   * Sakelar undo, dibagi dari luar (App.vue) dengan cara yang sama seperti
+   * `premoveEnabled`. Ditegakkan di `undo()` sendiri, bukan cuma di tombolnya —
+   * sama seperti `playAs` di bawah, yang menjaga keutuhan permainan seharusnya
+   * modelnya, bukan UI-nya.
+   */
+  undoEnabled?: Ref<boolean>
+  /**
    * Lawan komputer SELALU Stockfish — tidak ada sakelar mesin lain di UI.
    * Satu-satunya alasan ini bisa diganti adalah pengujian: Node tidak punya
    * `Worker`/WASM, jadi tes menyuntikkan pengganti sinkron di sini alih-alih
@@ -93,6 +100,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   const premoveFailed = shallowRef<{ from: Square; to: Square } | null>(null)
   let premoveFailTimer: ReturnType<typeof setTimeout> | null = null
   const premoveEnabled = options.premoveEnabled ?? ref(true)
+  const undoEnabled = options.undoEnabled ?? ref(true)
   const findBestMove = options.findBestMove ?? findBestStockfishMove
 
   const orientation = ref<Color>(WHITE)
@@ -476,7 +484,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   // ------------------------------------------------------------------
 
   function undo(): void {
-    if (!history.value.length) return
+    if (!undoEnabled.value || !history.value.length) return
     invalidateSearch()
     cancelPremove()
 
@@ -653,6 +661,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     premoveFailed,
     premoveColor,
     premoveEnabled,
+    undoEnabled,
     thinking,
     lastSearch,
     // pengaturan

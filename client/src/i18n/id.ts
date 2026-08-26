@@ -18,6 +18,7 @@ export const id = {
   'app.modeLocal': 'Lokal',
   'app.modeOnline': 'Online',
   'app.language': 'Bahasa',
+  'settings.title': 'Pengaturan',
 
   // Warna dan bidak
   'color.w': 'Putih',
@@ -75,8 +76,10 @@ export const id = {
   'controls.setupLocked':
     'Lawan dan warna terkunci selama pertandingan berjalan. Mulai permainan baru untuk menggantinya.',
   'controls.playAs': 'Anda bermain sebagai',
+  'controls.playAids': 'Bantuan bermain',
   'controls.showHints': 'Tampilkan petunjuk langkah',
   'controls.premove': 'Aktifkan premove',
+  'controls.undoEnabled': 'Aktifkan batalkan langkah',
   'premove.queued': 'Premove menunggu giliran',
   'premove.cancel': 'Batalkan',
   'controls.newGame': 'Permainan baru',

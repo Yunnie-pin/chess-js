@@ -5,6 +5,7 @@ import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
 import GameControls from './components/GameControls.vue'
 import LanguageSwitch from './components/LanguageSwitch.vue'
+import SettingsMenu from './components/SettingsMenu.vue'
 import MoveHistory from './components/MoveHistory.vue'
 import OnlineLobby from './components/OnlineLobby.vue'
 import OpponentHalo from './components/OpponentHalo.vue'
@@ -29,7 +30,10 @@ const { t, formatNumber } = useI18n()
 // Sakelar premove dibagi ke kedua composable, supaya satu checkbox berlaku
 // di mode offline maupun online sekaligus — sama seperti showHints sekarang.
 const premoveEnabled = ref(true)
-const offline = useChessGame({ premoveEnabled })
+// Undo cuma ada di mode lokal (di online papan milik server), jadi sakelarnya
+// tidak perlu dibagi ke useOnlineGame seperti premoveEnabled.
+const undoEnabled = ref(true)
+const offline = useChessGame({ premoveEnabled, undoEnabled })
 const online = useOnlineGame(resolveServerUrl(), { premoveEnabled })
 
 const appMode = ref<AppMode>('offline')
@@ -486,6 +490,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           </button>
         </nav>
         <LanguageSwitch />
+        <SettingsMenu
+          v-model:show-hints="offline.showHints.value"
+          v-model:premove-enabled="premoveEnabled"
+          v-model:undo-enabled="undoEnabled"
+        />
       </div>
     </header>
 
@@ -596,12 +605,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           v-else
           v-model:mode="offline.mode.value"
           v-model:elo="offline.elo.value"
-          v-model:show-hints="offline.showHints.value"
-          v-model:premove-enabled="premoveEnabled"
           :human-color="offline.humanColor.value"
           :can-undo="offline.history.value.length > 0"
           :busy="offline.thinking.value"
           :setup-locked="offline.setupLocked.value"
+          :undo-enabled="undoEnabled"
           @reset="resetGame"
           @undo="undoMove"
           @flip="flipBoard"

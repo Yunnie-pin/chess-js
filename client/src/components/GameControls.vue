@@ -11,8 +11,6 @@ const { t } = useI18n()
 
 const mode = defineModel<GameMode>('mode', { required: true })
 const elo = defineModel<EloRating>('elo', { required: true })
-const showHints = defineModel<boolean>('showHints', { required: true })
-const premoveEnabled = defineModel<boolean>('premoveEnabled', { required: true })
 
 defineProps<{
   humanColor: Color | null
@@ -20,6 +18,8 @@ defineProps<{
   busy: boolean
   /** Pertandingan sudah berjalan, jadi lawannya tidak boleh diganti lagi. */
   setupLocked: boolean
+  /** Cuma dibaca di sini (tombol Undo dinonaktifkan bila mati) — sakelarnya sendiri ada di SettingsMenu. */
+  undoEnabled: boolean
 }>()
 
 const emit = defineEmits<{
@@ -100,21 +100,11 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
       <p v-if="setupLocked" class="note note--lock">{{ t('controls.setupLocked') }}</p>
     </template>
 
-    <label class="switch">
-      <input v-model="showHints" type="checkbox" />
-      <span>{{ t('controls.showHints') }}</span>
-    </label>
-
-    <label class="switch">
-      <input v-model="premoveEnabled" type="checkbox" />
-      <span>{{ t('controls.premove') }}</span>
-    </label>
-
     <div class="buttons">
       <button type="button" class="btn btn--primary" @click="emit('reset')">
         {{ t('controls.newGame') }}
       </button>
-      <button type="button" class="btn" :disabled="!canUndo || busy" @click="emit('undo')">
+      <button type="button" class="btn" :disabled="!canUndo || busy || !undoEnabled" @click="emit('undo')">
         {{ t('controls.undo') }}
       </button>
       <button type="button" class="btn" @click="emit('flip')">{{ t('board.flip') }}</button>
@@ -195,22 +185,6 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
   margin-top: 0.15rem;
   padding-left: 0.55rem;
   border-left: 2px solid var(--border);
-}
-
-.switch {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.switch input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--accent);
-  cursor: pointer;
 }
 
 .buttons {

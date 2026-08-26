@@ -547,3 +547,17 @@ test('mematikan sakelar premove membatalkan yang sudah diantre', () =>
     click(game, 'g1', 'f3')
     assert.equal(game.premoveQueue.value.length, 0)
   }))
+
+test('mematikan sakelar undo membuat undo() tidak melakukan apa-apa', () =>
+  withGame((game) => {
+    click(game, 'e2', 'e4')
+    assert.equal(game.history.value.length, 1)
+
+    game.undoEnabled.value = false
+    game.undo()
+    assert.equal(game.history.value.length, 1, 'undo tidak boleh berjalan selagi sakelarnya mati')
+
+    game.undoEnabled.value = true
+    game.undo()
+    assert.equal(game.history.value.length, 0, 'menyala lagi, undo berjalan seperti biasa')
+  }))
