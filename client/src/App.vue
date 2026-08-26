@@ -34,6 +34,7 @@ const online = useOnlineGame(resolveServerUrl(), { premoveEnabled })
 
 const appMode = ref<AppMode>('offline')
 const orientation = ref<Color>('w')
+const chessBoardRef = ref<InstanceType<typeof ChessBoard> | null>(null)
 
 const colorName = (color: Color): string => t(`color.${color}`)
 const endMessage = (reason: GameEndReason): string => t(`end.${reason}`)
@@ -239,14 +240,32 @@ const dropPiece = (from: Square, to: Square) => {
 }
 
 /** Mundur/maju satu ply; sampai di ujung terbaru kembali "mengikuti" posisi sekarang. */
+/**
+ * Anotasi (panah/tanda) digambar untuk posisi yang SEDANG tampil. Begitu
+ * tampilannya berpindah ke posisi lain — lewat panah keyboard, lompat dari
+ * daftar langkah, atau balik ke posisi sekarang — anotasi lama tidak lagi
+ * berarti apa-apa di papan yang baru, jadi ikut dibersihkan di sini.
+ */
+function clearBoardAnnotations(): void {
+  chessBoardRef.value?.clearAnnotations()
+}
+
+/** Mundur/maju satu ply; sampai di ujung terbaru kembali "mengikuti" posisi sekarang. */
 function stepView(delta: -1 | 1): void {
   const next = Math.min(plyCount.value, Math.max(0, displayPly.value + delta))
   viewPly.value = next === plyCount.value ? null : next
+  clearBoardAnnotations()
 }
 
 function jumpView(ply: number): void {
   const clamped = Math.min(plyCount.value, Math.max(0, ply))
   viewPly.value = clamped === plyCount.value ? null : clamped
+  clearBoardAnnotations()
+}
+
+function backToLive(): void {
+  viewPly.value = null
+  clearBoardAnnotations()
 }
 
 // Riwayatnya sendiri berubah bentuk (langkah baru dari sini, room lain,
@@ -254,11 +273,13 @@ function jumpView(ply: number): void {
 // sudah tidak lagi berarti sama.
 watch(appMode, () => {
   viewPly.value = null
+  clearBoardAnnotations()
 })
 watch(
   () => online.inRoom.value,
   () => {
     viewPly.value = null
+    clearBoardAnnotations()
   }
 )
 
@@ -387,18 +408,22 @@ const flipBoard = () => {
 }
 
 // Setiap aksi yang membentuk ulang riwayatnya sendiri mengembalikan
-// penelusuran ke posisi sekarang — lihat catatan pada `viewPly`.
+// penelusuran ke posisi sekarang — lihat catatan pada `viewPly` — dan
+// membuang anotasi lama, yang digambar untuk papan yang sekarang sudah lain.
 const resetGame = () => {
   offline.reset()
   viewPly.value = null
+  clearBoardAnnotations()
 }
 const undoMove = () => {
   offline.undo()
   viewPly.value = null
+  clearBoardAnnotations()
 }
 const rematch = () => {
   online.rematch()
   viewPly.value = null
+  clearBoardAnnotations()
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -412,6 +437,7 @@ function onKeydown(event: KeyboardEvent): void {
     else offline.selected.value = null
     cancelPremove()
     viewPly.value = null
+    clearBoardAnnotations()
   } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
     // Menelusuri riwayat, bukan membatalkan langkah — berlaku di kedua mode,
     // karena murni tampilan dan tidak menyentuh permainan yang sebenarnya.
@@ -420,8 +446,7 @@ function onKeydown(event: KeyboardEvent): void {
   } else if (!isOnline.value && event.ctrlKey && event.key.toLowerCase() === 'z') {
     // Undo hanya untuk permainan lokal — di online, papan milik server.
     event.preventDefault()
-    offline.undo()
-    viewPly.value = null
+    undoMove()
   }
 }
 
@@ -481,6 +506,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </div>
 
         <ChessBoard
+          ref="chessBoardRef"
           :board="board"
           :orientation="orientation"
           :selected="selected"
@@ -527,7 +553,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
         <div v-if="!isLive" class="premove-banner">
           <span>{{ t('history.viewing', { ply: displayPly, total: plyCount }) }}</span>
-          <button type="button" class="premove-banner__cancel" @click="viewPly = null">
+          <button type="button" class="premove-banner__cancel" @click="backToLive">
             {{ t('history.backToCurrent') }}
           </button>
         </div>
