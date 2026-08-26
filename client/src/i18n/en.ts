@@ -55,7 +55,8 @@ export const en: Messages = {
   'controls.vsComputer': 'Vs computer',
   'controls.twoPlayers': 'Two players',
   'controls.strength': 'Opponent strength',
-  'controls.eloNote': 'These Elo numbers are estimates, not calibrated by rated play.',
+  'controls.eloNote':
+    "The opponent is Stockfish, and these Elo numbers are its own UCI_Elo — not a free-floating scale. The range is pinned to what Stockfish itself supports (1320-3190), so even Beginner is well past average human play.",
   'controls.setupLocked':
     'Opponent and colour are locked while a game is in progress. Start a new game to change them.',
   'controls.playAs': 'You play as',
@@ -66,11 +67,11 @@ export const en: Messages = {
   'controls.newGame': 'New game',
   'controls.undo': 'Undo move',
 
-  'level.400': 'Beginner',
-  'level.800': 'Casual',
-  'level.1200': 'Intermediate',
-  'level.1600': 'Strong',
-  'level.2000': 'Maximum',
+  'level.1320': 'Beginner',
+  'level.1800': 'Casual',
+  'level.2200': 'Intermediate',
+  'level.2600': 'Strong',
+  'level.3190': 'Maximum',
 
   'lobby.title': 'Play online',
   'lobby.subtitle': 'Create a room and share the code, or join with a code from a friend.',
@@ -117,6 +118,7 @@ export const en: Messages = {
   'promotion.ariaLabel': 'Choose promotion piece',
   'promotion.cancel': 'Cancel',
 
+  'meta.poweredBy': 'Computer opponent powered by Stockfish 18',
   'meta.lastSearch': 'Last search:',
   'meta.searchInfo': 'depth {depth} · {nodes} nodes · {ms} ms',
   'meta.shortcuts': 'Shortcuts:',

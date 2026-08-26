@@ -434,6 +434,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <MoveHistory :rows="historyRows" :ply-count="plyCount" />
 
         <footer class="meta">
+          <p v-if="!isOnline && offline.mode.value === 'lawan-komputer'" class="meta__line">
+            {{ t('meta.poweredBy') }}
+          </p>
           <p v-if="searchInfo" class="meta__line">{{ t('meta.lastSearch') }} {{ searchInfo }}</p>
           <p v-if="!isOnline" class="meta__line meta__fen" :title="offline.fen.value">
             FEN: {{ offline.fen.value }}

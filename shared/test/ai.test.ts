@@ -17,7 +17,7 @@ test('evaluasi menghitung keunggulan materi', () => {
 test('menemukan skakmat satu langkah', () => {
   // Mat tangga: benteng h1 menuju h8.
   const position = new Position('6k1/5ppp/8/8/8/8/8/R6K w - - 0 1')
-  const { move } = chooseMove(position, 2000)
+  const { move } = chooseMove(position, 3190)
   assert.ok(move)
   assert.equal(position.toSAN(move!), 'Ra8#')
 })
@@ -25,7 +25,7 @@ test('menemukan skakmat satu langkah', () => {
 test('menghindari skakmat satu langkah dari lawan', () => {
   // Putih sedang diancam mat di g2; satu-satunya pertahanan adalah menutup jalur.
   const position = new Position('6k1/8/8/8/8/8/6q1/6K1 w - - 0 1')
-  const { move } = chooseMove(position, 2000)
+  const { move } = chooseMove(position, 3190)
   assert.ok(move)
   position.makeMove(move!)
   assert.notEqual(position.status().reason, 'checkmate')
@@ -34,14 +34,14 @@ test('menghindari skakmat satu langkah dari lawan', () => {
 test('mengambil bidak gratis', () => {
   // Menteri hitam di d5 tidak terlindungi dan bisa ditangkap benteng d1.
   const position = new Position('4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1')
-  const { move } = chooseMove(position, 2000)
+  const { move } = chooseMove(position, 3190)
   assert.ok(move)
   assert.equal(move!.captured, 'bq')
 })
 
 test('mengembalikan langkah milik posisi asli, bukan salinan', () => {
   const position = new Position()
-  const { move } = chooseMove(position, 400)
+  const { move } = chooseMove(position, 1320)
   assert.ok(move)
   assert.ok(
     position.legalMoves().some((m) => m.from === move!.from && m.to === move!.to),
@@ -53,5 +53,5 @@ test('mengembalikan langkah milik posisi asli, bukan salinan', () => {
 
 test('mengembalikan null bila tidak ada langkah legal', () => {
   const mated = new Position('rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3')
-  assert.equal(chooseMove(mated, 1200).move, null)
+  assert.equal(chooseMove(mated, 2200).move, null)
 })

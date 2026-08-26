@@ -5,8 +5,12 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/Yunnie-pin/chess-js?color=blue&label=release)](https://github.com/Yunnie-pin/chess-js/releases/latest)
 
 Chess in the browser: play the computer, or play a friend online through a room.
-The engine, the AI, and the server are all written from scratch — no chess
-library.
+The rules engine, move validation, and multiplayer server are all written from
+scratch — no chess library. The computer opponent itself is
+[Stockfish](https://stockfishchess.org/), running locally in the browser via
+WebAssembly — not the custom engine that originally lived in this repo. That
+engine is still here, still tested, just not what plays anymore; see
+[Technical notes](#technical-notes).
 
 ![Chess board in a gold and ivory theme, control panel on the right, and a portrait of Mari in the background](https://i.imgur.com/BMBWwKk.png)
 
@@ -27,7 +31,7 @@ For local play only (vs computer / two players) you don't need the server —
 | `npm run dev`        | Server + client together                  |
 | `npm run dev:server` | Multiplayer server only                   |
 | `npm run dev:client` | UI only                                   |
-| `npm test`           | 124 tests across the three workspaces     |
+| `npm test`           | 136 tests across the three workspaces     |
 | `npm run typecheck`  | Strict TypeScript, Vue templates included |
 | `npm run build`      | Build the client into `client/dist/`      |
 | `npm start`          | Run the server for production             |
@@ -124,9 +128,10 @@ symptom to debug.
 ```
 shared/     Shared by client and server — owned by neither
   src/chess.ts       Board, move generation, SAN, game status
-  src/zobrist.ts     Position hash tables
-  src/tt.ts          Transposition table
-  src/ai.ts          Negamax + alpha-beta + quiescence + TT
+  src/zobrist.ts     Position hash tables — for the retained engine below
+  src/tt.ts          Transposition table — for the retained engine below
+  src/ai.ts          Negamax + alpha-beta + quiescence + TT — kept and
+                      tested, but not the live opponent (Stockfish is)
   src/protocol.ts    WebSocket message contract + guards for both directions
   src/types.ts       Core types (Piece, Move, GameStatus, …)
 
@@ -138,7 +143,12 @@ server/     Multiplayer server
 client/     Vue 3 UI
   src/composables/useChessGame.ts    Local play (two players / vs computer)
   src/composables/useOnlineGame.ts   Multiplayer client
-  src/engine/ai.worker.ts            Web Worker wrapper for the AI
+  src/engine/stockfishEngine.ts      Worker wrapper that talks UCI to
+                                      Stockfish — the actual opponent
+  src/engine/ai.worker.ts            Worker wrapper for the retained custom
+                                      engine — kept, but genuinely unused now
+  public/engine/                     Stockfish's own WASM build (GPLv3 —
+                                      see COPYING.txt there)
   src/i18n/                          Indonesian and English text
   src/opponents.ts                   Characters and palettes per Elo level
   src/theme.ts                       Applies the active opponent's palette
@@ -173,8 +183,9 @@ draw condition (stalemate, insufficient material, threefold repetition, the
 fifty-move rule).
 
 Click two squares or drag the piece — both work on desktop and on touch screens.
-The computer opponent has five Elo levels, with a 500 ms minimum reply delay so
-its moves don't pop in out of nowhere.
+The computer opponent is Stockfish, running locally via WebAssembly, with five
+Elo levels and a 500 ms minimum reply delay so its moves don't pop in out of
+nowhere.
 
 Shortcuts: `←` undo, `F` flip the board, `Esc` clear the selection.
 
@@ -185,11 +196,15 @@ board squares, the glow behind the header, the halo, and the portrait:
 
 | Elo  | Opponent        | Level        |
 | ---- | --------------- | ------------ |
-| 400  | Iochi Mari      | Beginner     |
-| 800  | Toki            | Casual       |
-| 1200 | Kisaki          | Intermediate |
-| 1600 | Hayase Yuuka    | Strong       |
-| 2000 | Akeboshi Himari | Maximum      |
+| 1320 | Iochi Mari      | Beginner     |
+| 1800 | Asuma Toki      | Casual       |
+| 2200 | Ryuuge Kisaki   | Intermediate |
+| 2600 | Hayase Yuuka    | Strong       |
+| 3190 | Akeboshi Himari | Maximum      |
+
+These are Stockfish's own `UCI_Elo` values — the ladder is pinned to exactly
+what Stockfish supports (1320 is its floor, 3190 its ceiling), not a
+free-floating scale. See [Technical notes](#technical-notes).
 
 Mari stays the host: two-player and online games use her palette, since neither
 has a machine opponent to stand in for.
@@ -237,33 +252,31 @@ positions, Kiwipete included, up to 197,281 positions. That's what catches the
 subtle bugs in castling, en passant, and pins — the kind that slip past manual
 testing.
 
-**Levels are Elo, not search depth.** Making an engine weak purely by searching
-shallower feels wrong — its mistakes are uniform and nothing like a human's. So
-each level has two knobs: depth/time, plus `errorMargin`, which is how bad a move
-it's still allowed to pick. An engine that searches deep enough but occasionally
-takes the second-best move errs much more like a person — it misses tactics
-instead of suddenly hanging its queen.
+**Levels are Stockfish's own Elo, not the retained engine's.** The five
+character levels map straight onto Stockfish's `UCI_LimitStrength` +
+`UCI_Elo` options (`ELO_LEVELS` in [ai.ts](shared/src/ai.ts), read by
+[useChessGame.ts](client/src/composables/useChessGame.ts)'s `scheduleAi`), so
+this app's Elo numbers inherit Stockfish's real calibration against rated
+engines instead of a hand-tuned guess. The ladder is pinned to exactly what
+Stockfish itself supports: 1320 (its floor) through 3190 (its ceiling) — not
+picked freely, since anything below 1320 is a number Stockfish simply cannot
+be made to play at.
 
-Measured against a fixed reference (depth-4 analysis of the same position),
-average loss per move:
-
-```
-400   Beginner   depth 1    129.6 cp   <- default
-800   Casual     depth 2     69.9 cp
-1200  Medium     depth 3     19.4 cp
-1600  Strong     depth 4      8.1 cp
-2000  Maximum    depth 6      0.0 cp
-```
-
-The reference has to be fixed. At first each level was measured against its own
-search, and the result was misleading: level 400 looked like it only lost 33 cp —
-less than level 800 — even though its moves are clearly worse. A depth-1 search
-simply sees a narrow spread of scores, so its relative "loss" comes out small.
-
-**The Elo numbers are estimates**, not calibrated by playing rated engines. The
-ordering is guaranteed to go up, but don't read 1200 here as exactly 1200 on
-Lichess. Every number lives in one `STRENGTH_PROFILES` table in
-[ai.ts](shared/src/ai.ts) if you want to tune it.
+**The engine that used to set these numbers is still in the repo.** Making an
+engine weak purely by searching shallower felt wrong — its mistakes are
+uniform and nothing like a human's — so each level originally had two knobs:
+depth/time, plus `errorMargin`, how bad a move it was still allowed to pick.
+An engine that searches deep enough but occasionally takes the second-best
+move errs much more like a person; it misses tactics instead of suddenly
+hanging its queen. That engine ([ai.ts](shared/src/ai.ts)) is exactly what the
+rest of this section describes — real, tested, optimized — and its
+`depth`/`errorMargin`/`blunderChance` knobs aren't used by a live game
+anymore. One field from its `STRENGTH_PROFILES` table still is, though:
+`timeMs` doubles as the `go movetime` budget handed to Stockfish per level, so
+higher levels really do get more thinking time, not just a stronger label.
+The retained engine's own test suite
+([ai.test.ts](shared/test/ai.test.ts), [strength.test.ts](shared/test/strength.test.ts))
+still runs and still passes.
 
 **Zobrist hashing.** The position key used to be a string from
 `board.join(',')`, rebuilt on every `makeMove`. Measured with perft, that ate
@@ -295,21 +308,42 @@ sooner or later the two will diverge — and you'd only find out during a real
 match. `protocol.ts` is there for the same reason: if one side changes a message
 shape, what breaks is `npm run typecheck`, not the players.
 
-**Why `Position` isn't reactive.** The AI search calls `makeMove`/`undoMove`
-hundreds of thousands of times. Wrapping it in a Vue proxy would slow that down
-several times over. So the board is mutated directly and a `version` counter
-ticks whenever the position changes — every `computed` hangs off that counter.
+**Why `Position` isn't reactive.** The retained engine's search — still
+exercised by its own test suite, and by perft — calls `makeMove`/`undoMove`
+hundreds of thousands of times; Stockfish never touches this `Position` at
+all, since it keeps its own board internally, in WASM. Wrapping `Position` in
+a Vue proxy would slow the JS-side callers down several times over regardless,
+so the board is mutated directly and a `version` counter ticks whenever the
+position changes — every `computed` hangs off that counter.
 
-**Web Worker.** The AI search blocks whatever thread it runs on, so it lives in a
-worker to keep the board responsive. If the environment disallows module workers,
-the client falls back to a synchronous path automatically.
+**Web Worker(s).** Both engines are built to run off the main thread so the
+board stays responsive, though only one of them is actually invoked.
+Stockfish ([stockfishEngine.ts](client/src/engine/stockfishEngine.ts)) loads
+as a classic (non-module) Worker straight from
+[public/engine/](client/public/engine/) — the "lite, single-threaded" WASM
+build, chosen specifically because it doesn't need `Threads`/`SharedArrayBuffer`
+and the cross-origin-isolation headers that come with them, at the cost of
+being weaker than Stockfish's largest build (still far stronger than anyone
+playing here needs). It's ~7 MB, fetched once and cached by the browser, not
+part of the JS bundle — and GPLv3, unlike the rest of this repository, which
+doesn't declare a license of its own yet; its license text ships alongside it
+in [COPYING.txt](client/public/engine/COPYING.txt).
+
+The retained engine's own worker wrapper
+([ai.worker.ts](client/src/engine/ai.worker.ts)) is genuinely unused now —
+not called by the composable, not called by any test either.
+[game.test.ts](client/test/game.test.ts) still exercises the composable's AI
+scheduling (the minimum reply delay, undo cancelling a pending move, and so
+on), but does it by injecting a trivial synchronous move-picker in place of
+Stockfish — Node has neither a browser `Worker` nor WASM — rather than
+quietly falling back to the retained engine.
 
 ## Testing
 
 ```
-shared/   39 tests   perft, SAN, draws, Zobrist hash consistency, the Elo ladder
+shared/   39 tests   perft, SAN, draws, Zobrist hash consistency, the retained engine's Elo ladder
 server/   28 tests   room rules, seats, tokens; plus real WebSocket integration
-client/   57 tests   local game state, dictionaries, opponent palettes, end-to-end
+client/   69 tests   local game state, premove, dictionaries, opponent palettes, end-to-end
 ```
 
 The server and client tests both spin up a real server process on their own port

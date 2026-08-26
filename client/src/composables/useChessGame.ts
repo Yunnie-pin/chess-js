@@ -12,9 +12,11 @@ import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import type { Ref } from 'vue'
 
 import { Position, START_FEN, WHITE, algebraic, colorOf, opponent, typeOf } from '@chess/shared/chess'
-import { DEFAULT_ELO, ELO_LEVELS, STRENGTH_PROFILES, chooseMove } from '@chess/shared/ai'
+import { DEFAULT_ELO, ELO_LEVELS, STRENGTH_PROFILES } from '@chess/shared/ai'
 import type { EloRating } from '@chess/shared/ai'
-import type { AiRequest, AiResponse } from '../engine/ai.worker.ts'
+import type { AiResponse } from '../engine/ai.worker.ts'
+import { findBestMove as findBestStockfishMove } from '../engine/stockfishEngine.ts'
+import type { StockfishMove } from '../engine/stockfishEngine.ts'
 import type {
   Color,
   HistoryEntry,
@@ -62,6 +64,14 @@ export interface UseChessGameOptions {
    * checkbox-nya cuma ada satu tapi dipakai di kedua papan.
    */
   premoveEnabled?: Ref<boolean>
+  /**
+   * Lawan komputer SELALU Stockfish — tidak ada sakelar mesin lain di UI.
+   * Satu-satunya alasan ini bisa diganti adalah pengujian: Node tidak punya
+   * `Worker`/WASM, jadi tes menyuntikkan pengganti sinkron di sini alih-alih
+   * diam-diam jatuh ke mesin buatan sendiri (`shared/src/ai.ts`) yang memang
+   * sengaja tidak lagi dipanggil dari jalur permainan.
+   */
+  findBestMove?: typeof findBestStockfishMove
 }
 
 export function useChessGame(options: UseChessGameOptions = {}) {
@@ -83,6 +93,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   const premoveFailed = shallowRef<{ from: Square; to: Square } | null>(null)
   let premoveFailTimer: ReturnType<typeof setTimeout> | null = null
   const premoveEnabled = options.premoveEnabled ?? ref(true)
+  const findBestMove = options.findBestMove ?? findBestStockfishMove
 
   const orientation = ref<Color>(WHITE)
   const mode = ref<GameMode>('lawan-komputer')
@@ -518,31 +529,9 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   // Lawan komputer
   // ------------------------------------------------------------------
 
-  let worker: Worker | null = null
-  let workerBroken = false
   let requestId = 0
   let searchStartedAt = 0
   let replyTimer: ReturnType<typeof setTimeout> | null = null
-
-  function getWorker(): Worker | null {
-    if (worker || workerBroken) return worker
-    try {
-      worker = new Worker(new URL('../engine/ai.worker.ts', import.meta.url), { type: 'module' })
-      worker.addEventListener('message', (event: MessageEvent<AiResponse>) => applyAiResult(event.data))
-      worker.addEventListener('error', () => {
-        // Beberapa lingkungan melarang module worker — jatuh ke mode sinkron.
-        workerBroken = true
-        worker?.terminate()
-        worker = null
-        thinking.value = false
-        scheduleAi()
-      })
-    } catch {
-      workerBroken = true
-      worker = null
-    }
-    return worker
-  }
 
   /** Hasil pencarian yang sudah tidak relevan (mis. setelah undo) diabaikan. */
   function invalidateSearch(): void {
@@ -586,6 +575,11 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     if (move) commit(move)
   }
 
+  /**
+   * Lawan komputer SELALU Stockfish (lewat `findBestMove`, sungguhan atau
+   * pengganti tes) — mesin buatan sendiri di `shared/src/ai.ts` sengaja tidak
+   * lagi dipanggil dari sini sama sekali, bukan sekadar cadangan.
+   */
   function scheduleAi(): void {
     if (mode.value !== 'lawan-komputer') return
     if (position.turn !== aiColor.value) return
@@ -594,31 +588,29 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     const id = ++requestId
     thinking.value = true
     searchStartedAt = Date.now()
-    const request: AiRequest = { id, fen: position.fen(), elo: elo.value }
 
-    const activeWorker = getWorker()
-    if (activeWorker) {
-      activeWorker.postMessage(request)
-      return
-    }
-
-    // Cadangan tanpa worker: beri browser satu frame untuk menggambar indikator
-    // "berpikir" sebelum pencarian memblokir thread utama.
-    setTimeout(() => {
-      if (id !== requestId) return
-      const started = Date.now()
-      const result = chooseMove(position, elo.value)
-      applyAiResult({
-        id,
-        from: result.move?.from ?? null,
-        to: result.move?.to ?? null,
-        promotion: result.move?.promotion ?? null,
-        score: result.score,
-        depth: result.depth,
-        nodes: result.nodes,
-        timeMs: Date.now() - started
+    const fen = position.fen()
+    const movetimeMs = STRENGTH_PROFILES[elo.value].timeMs
+    findBestMove(fen, elo.value, movetimeMs)
+      .then((move: StockfishMove | null) => {
+        applyAiResult({
+          id,
+          from: move?.from ?? null,
+          to: move?.to ?? null,
+          promotion: move?.promotion ?? null,
+          score: 0,
+          depth: 0,
+          nodes: 0,
+          timeMs: Date.now() - searchStartedAt
+        })
       })
-    }, 50)
+      .catch((error: unknown) => {
+        // Tidak ada jalan lain di sini secara sengaja — lawan hanya diam
+        // menunggu daripada balik memakai mesin buatan sendiri.
+        if (id !== requestId) return
+        console.error('Stockfish gagal dimuat:', error)
+        thinking.value = false
+      })
   }
 
   watch([mode, aiColor, elo], () => {
@@ -633,8 +625,6 @@ export function useChessGame(options: UseChessGameOptions = {}) {
 
   onScopeDispose(() => {
     invalidateSearch()
-    worker?.terminate()
-    worker = null
     if (premoveFailTimer !== null) clearTimeout(premoveFailTimer)
   })
 

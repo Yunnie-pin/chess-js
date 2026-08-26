@@ -11,11 +11,19 @@ import type { Color, Move, PieceType } from './types.ts'
 import { TT_EXACT, TT_LOWER, TT_UPPER, ttProbe, ttStore } from './tt.ts'
 import type { TTHit } from './tt.ts'
 
-/** Level kekuatan yang bisa dipilih pemain, dinyatakan sebagai perkiraan Elo. */
-export const ELO_LEVELS = [400, 800, 1200, 1600, 2000] as const
+/**
+ * Level kekuatan yang bisa dipilih pemain, dinyatakan sebagai Elo.
+ *
+ * Rentang ini SENGAJA dipatok persis ke jangkauan `UCI_Elo` milik Stockfish
+ * sendiri (1320-3190) — bukan skala Elo bebas seperti dulu. Alasannya: lawan
+ * sungguhannya sekarang Stockfish (lihat `client/src/engine/stockfishEngine.ts`),
+ * dan lantai kekuatannya sendiri adalah 1320 — level di bawah itu mustahil
+ * dibuat, jadi tidak ada gunanya menjanjikan angka yang tidak bisa ditepati.
+ */
+export const ELO_LEVELS = [1320, 1800, 2200, 2600, 3190] as const
 export type EloRating = (typeof ELO_LEVELS)[number]
 
-export const DEFAULT_ELO: EloRating = 400
+export const DEFAULT_ELO: EloRating = 1320
 
 /** Satu langkah di akar beserta skornya — dasar pemilihan langkah per level. */
 export interface RootMove {
@@ -49,17 +57,23 @@ interface StrengthProfile {
 }
 
 /**
- * PERINGATAN SOAL ANGKANYA: ini perkiraan kasar, BELUM dikalibrasi lewat
- * pertandingan melawan mesin ber-rating. Urutannya dijamin (2000 jelas lebih
- * kuat dari 1600), tapi jangan anggap 1200 di sini setara persis 1200 Lichess.
- * Kalau ada yang terasa meleset, angka-angka di tabel ini yang disetel.
+ * Tabel ini menyetel dua hal berbeda sekarang:
+ *
+ * - `timeMs` masih hidup — itu yang dikirim ke Stockfish sebagai anggaran
+ *   `go movetime` di `scheduleAi`, jadi level yang lebih tinggi memang benar
+ *   diberi waktu berpikir lebih lama, bukan cuma dilabeli begitu.
+ * - `maxDepth`/`errorMargin`/`blunderChance` sudah tidak dipakai jalur
+ *   permainan sama sekali — itu milik mesin buatan sendiri di bawah, yang
+ *   masih diuji tapi tidak lagi jalan. PERINGATAN SOAL ANGKANYA (untuk mesin
+ *   itu): perkiraan kasar, belum dikalibrasi lewat pertandingan melawan mesin
+ *   ber-rating.
  */
 export const STRENGTH_PROFILES: Record<EloRating, StrengthProfile> = {
-  400: { label: 'Pemula', maxDepth: 1, timeMs: 120, errorMargin: 500, blunderChance: 0.25 },
-  800: { label: 'Kasual', maxDepth: 2, timeMs: 300, errorMargin: 250, blunderChance: 0.1 },
-  1200: { label: 'Menengah', maxDepth: 3, timeMs: 700, errorMargin: 110, blunderChance: 0.03 },
-  1600: { label: 'Kuat', maxDepth: 4, timeMs: 1500, errorMargin: 40, blunderChance: 0 },
-  2000: { label: 'Maksimal', maxDepth: 7, timeMs: 4000, errorMargin: 0, blunderChance: 0 }
+  1320: { label: 'Pemula', maxDepth: 1, timeMs: 120, errorMargin: 500, blunderChance: 0.25 },
+  1800: { label: 'Kasual', maxDepth: 2, timeMs: 300, errorMargin: 250, blunderChance: 0.1 },
+  2200: { label: 'Menengah', maxDepth: 3, timeMs: 700, errorMargin: 110, blunderChance: 0.03 },
+  2600: { label: 'Kuat', maxDepth: 4, timeMs: 1500, errorMargin: 40, blunderChance: 0 },
+  3190: { label: 'Maksimal', maxDepth: 7, timeMs: 4000, errorMargin: 0, blunderChance: 0 }
 }
 
 const PIECE_VALUE: Record<PieceType, number> = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 }

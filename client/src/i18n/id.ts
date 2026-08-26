@@ -70,7 +70,8 @@ export const id = {
   'controls.vsComputer': 'Lawan komputer',
   'controls.twoPlayers': 'Dua pemain',
   'controls.strength': 'Kekuatan lawan',
-  'controls.eloNote': 'Angka Elo ini perkiraan, belum dikalibrasi lewat pertandingan.',
+  'controls.eloNote':
+    'Lawannya Stockfish, dan angka Elo di sini adalah UCI_Elo miliknya sendiri — bukan skala bebas. Rentangnya dipatok ke jangkauan yang didukung Stockfish (1320-3190), jadi Pemula pun sudah jauh melampaui pemain rata-rata.',
   'controls.setupLocked':
     'Lawan dan warna terkunci selama pertandingan berjalan. Mulai permainan baru untuk menggantinya.',
   'controls.playAs': 'Anda bermain sebagai',
@@ -85,11 +86,11 @@ export const id = {
    * Keterangan tingkat, BUKAN nama lawannya. Nama karakter adalah nama diri —
    * tidak diterjemahkan — dan tinggal di `src/opponents.ts`.
    */
-  'level.400': 'Pemula',
-  'level.800': 'Kasual',
-  'level.1200': 'Menengah',
-  'level.1600': 'Kuat',
-  'level.2000': 'Maksimal',
+  'level.1320': 'Pemula',
+  'level.1800': 'Kasual',
+  'level.2200': 'Menengah',
+  'level.2600': 'Kuat',
+  'level.3190': 'Maksimal',
 
   // Lobi online
   'lobby.title': 'Main online',
@@ -145,6 +146,7 @@ export const id = {
   'promotion.cancel': 'Batal',
 
   // Keterangan di kaki panel
+  'meta.poweredBy': 'Lawan komputer ditenagai Stockfish 18',
   'meta.lastSearch': 'Pencarian terakhir:',
   'meta.searchInfo': 'kedalaman {depth} · {nodes} simpul · {ms} ms',
   'meta.shortcuts': 'Pintasan:',

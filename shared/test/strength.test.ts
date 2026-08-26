@@ -50,7 +50,7 @@ test('level bawaan ada dalam daftar', () => {
 
 test('hasil pencarian menyertakan skor tiap langkah akar, terurut dari terbaik', () => {
   const position = new Position()
-  const { rootMoves } = chooseMove(position, 1200)
+  const { rootMoves } = chooseMove(position, 2200)
 
   assert.equal(rootMoves.length, 20, 'posisi awal punya 20 langkah legal')
   for (let i = 1; i < rootMoves.length; i++) {
@@ -95,7 +95,7 @@ test('level maksimal selalu memilih langkah terbaik menurut pencariannya', () =>
   // Menteri hitam di d5 gratis. Level tertinggi tidak boleh melewatkannya.
   for (let attempt = 0; attempt < 5; attempt++) {
     const position = new Position('4k3/8/8/3q4/8/8/8/3RK3 w - - 0 1')
-    const { move } = chooseMove(position, 2000)
+    const { move } = chooseMove(position, 3190)
     assert.equal(move?.captured, 'bq', `percobaan ${attempt + 1}: menteri gratis harus diambil`)
   }
 })
@@ -116,8 +116,9 @@ const OPEN_POSITION = 'r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQ
  * levelnya, dan level teratas selalu mengambil langkah terbaik. Ketiganya
  * bersama-sama sudah menyiratkan urutan kekuatannya.
  *
- * Angka kerugian per level yang ada di README berasal dari benchmark sekali
- * jalan, bukan dari suite ini — memang tempatnya di sana.
+ * Semua ini menguji mesin sendiri (`chooseMove` di ai.ts), bukan lawan
+ * sungguhan di aplikasi — itu Stockfish sekarang, lewat UCI_Elo miliknya
+ * sendiri, bukan tabel STRENGTH_PROFILES di berkas ini.
  */
 
 /**
@@ -202,7 +203,7 @@ test('skor langkah akar bermakna, bukan semuanya seri di batas alpha', () => {
   // Bug yang pernah terjadi: dengan penyempitan alpha, semua langkah yang
   // gagal-rendah melaporkan skor yang sama, sehingga tabel skornya tidak
   // berguna untuk membedakan level.
-  const result = chooseMove(new Position(OPEN_POSITION), 1600)
+  const result = chooseMove(new Position(OPEN_POSITION), 2600)
   const distinct = new Set(result.rootMoves.map((entry) => entry.score))
 
   assert.ok(result.depth >= 2, `pencarian harus lebih dari satu ply, dapat ${result.depth}`)

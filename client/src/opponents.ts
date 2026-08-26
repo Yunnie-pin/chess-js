@@ -2,13 +2,16 @@
  * Daftar lawan komputer: satu karakter untuk tiap tingkat Elo.
  *
  * Berkas ini murni presentasi dan hanya milik klien. Kekuatan sesungguhnya
- * tetap datang dari `STRENGTH_PROFILES` di shared/src/ai.ts — yang juga dipakai
- * server dan tes, dan tidak tahu-menahu soal karakter. Mengganti nama atau warna
- * di sini tidak akan mengubah cara mesin bermain sedikit pun.
+ * datang dari Stockfish, lewat `UCI_Elo` yang dipetakan langsung dari `elo` di
+ * bawah (lihat `scheduleAi` di `useChessGame.ts`) — bukan tidak tahu-menahu
+ * soal karakter, tapi juga tidak tahu-menahu soal cara Stockfish memutuskan
+ * langkahnya. Mengganti nama atau warna di sini tidak mengubah cara mesin
+ * bermain sedikit pun; mengganti `elo` di bawah pun cuma boleh nilai yang
+ * memang didukung Stockfish sendiri (lihat `ELO_LEVELS` di shared/src/ai.ts).
  *
  * Nama karakter adalah nama diri: tidak pernah diterjemahkan, jadi tidak masuk
  * kamus i18n. Yang diterjemahkan hanya keterangan tingkatnya ('Pemula',
- * 'Beginner', …) lewat kunci `level.400` dan seterusnya.
+ * 'Beginner', …) lewat kunci `level.1320` dan seterusnya.
  */
 
 import { ELO_LEVELS } from '@chess/shared/ai'
@@ -77,9 +80,9 @@ export interface Opponent {
  * harus menyusul, bukan sebaliknya.
  */
 export const OPPONENTS: Record<EloRating, Opponent> = {
-  400: {
+  1320: {
     id: 'mari',
-    elo: 400,
+    elo: 1320,
     name: 'Iochi Mari',
     portrait: 'mari-full.webp',
     face: 'mari-face.webp',
@@ -95,10 +98,10 @@ export const OPPONENTS: Record<EloRating, Opponent> = {
       glow: '#2e2413'
     }
   },
-  800: {
+  1800: {
     id: 'toki',
-    elo: 800,
-    name: 'Toki',
+    elo: 1800,
+    name: 'Asuma Toki',
     portrait: 'toki-full.webp',
     face: 'toki-face.webp',
     halo: 'halo-toki.png',
@@ -113,10 +116,10 @@ export const OPPONENTS: Record<EloRating, Opponent> = {
       glow: '#122328'
     }
   },
-  1200: {
+  2200: {
     id: 'kisaki',
-    elo: 1200,
-    name: 'Kisaki',
+    elo: 2200,
+    name: 'Ryuuge Kisaki',
     portrait: 'kisaki-full.webp',
     face: 'kisaki-face.webp',
     halo: 'halo-kisaki.png',
@@ -135,9 +138,9 @@ export const OPPONENTS: Record<EloRating, Opponent> = {
       glow: '#101f23'
     }
   },
-  1600: {
+  2600: {
     id: 'yuuka',
-    elo: 1600,
+    elo: 2600,
     name: 'Hayase Yuuka',
     portrait: 'yuuka-full.webp',
     face: 'yuuka-face.webp',
@@ -153,9 +156,9 @@ export const OPPONENTS: Record<EloRating, Opponent> = {
       glow: '#1b1733'
     }
   },
-  2000: {
+  3190: {
     id: 'himari',
-    elo: 2000,
+    elo: 3190,
     name: 'Akeboshi Himari',
     portrait: 'himari-full.webp',
     face: 'himari-face.webp',
@@ -179,7 +182,7 @@ export const OPPONENTS: Record<EloRating, Opponent> = {
 }
 
 /** Lawan bawaan sekaligus tuan rumah aplikasi saat tidak melawan komputer. */
-export const HOST_ELO: EloRating = 400
+export const HOST_ELO: EloRating = 1320
 export const HOST: Opponent = OPPONENTS[HOST_ELO]
 
 /** Urut menaik, mengikuti tangga Elo di shared — bukan urutan tulis objek di atas. */

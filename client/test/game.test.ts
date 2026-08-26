@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { effectScope, nextTick } from 'vue'
 
 import { MIN_REPLY_MS, useChessGame } from '../src/composables/useChessGame.ts'
-import { fromAlgebraic } from '@chess/shared/chess'
+import { Position, fromAlgebraic } from '@chess/shared/chess'
 
 type Game = ReturnType<typeof useChessGame>
 
@@ -17,15 +17,27 @@ async function waitForReply(game: Game, timeoutMs = 8000): Promise<void> {
 }
 
 /**
+ * Pengganti Stockfish untuk tes. Node tidak punya `Worker`/WASM, dan lawan
+ * komputer sengaja tidak lagi punya jalur cadangan ke mesin buatan sendiri
+ * (`shared/src/ai.ts`) — jadi tesnya menyuntikkan mesin sinkron-deterministik
+ * ini lewat `useChessGame({ findBestMove })`. Selalu memilih langkah legal
+ * pertama karena tes-tes di sini menguji perilaku composable-nya (jeda,
+ * pembatalan, penguncian setup), bukan kekuatan langkah yang dipilih.
+ */
+async function stubFindBestMove(fen: string) {
+  const move = new Position(fen).legalMoves()[0]
+  return move ? { from: move.from, to: move.to, promotion: move.promotion } : null
+}
+
+/**
  * Menjalankan composable di dalam effect scope tersendiri, persis seperti saat
- * dipakai komponen. Di Node tidak ada `Worker`, jadi composable otomatis memakai
- * jalur cadangan sinkron — yang justru memudahkan pengujian.
+ * dipakai komponen.
  */
 function withGame(run: (game: Game) => void | Promise<void>): Promise<void> {
   const scope = effectScope()
   let result: void | Promise<void>
   scope.run(() => {
-    const game = useChessGame()
+    const game = useChessGame({ findBestMove: stubFindBestMove })
     game.mode.value = 'dua-pemain' // matikan komputer kecuali tes memintanya
     result = run(game)
   })
@@ -168,10 +180,10 @@ test('memutar papan hanya mengubah sudut pandang', () =>
     assert.equal(game.fen.value, fen)
   }))
 
-test('komputer menjawab langkah pemain (jalur cadangan tanpa worker)', () =>
+test('komputer menjawab langkah pemain', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -191,7 +203,7 @@ test('komputer menjawab langkah pemain (jalur cadangan tanpa worker)', () =>
 test('komputer menahan jawabannya selama jeda minimum', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400 // level tercepat: anggaran waktunya paling kecil
+    game.elo.value = 1320 // level tercepat: anggaran waktunya paling kecil
     game.playAs('w')
     await nextTick()
 
@@ -214,7 +226,7 @@ test('komputer menahan jawabannya selama jeda minimum', () =>
 test('membatalkan langkah selagi jeda berjalan menggugurkan jawaban komputer', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -232,7 +244,7 @@ test('membatalkan langkah selagi jeda berjalan menggugurkan jawaban komputer', (
 test('undo pada mode lawan komputer membatalkan sepasang langkah', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -249,7 +261,7 @@ test('undo pada mode lawan komputer membatalkan sepasang langkah', () =>
 test('lawan terkunci begitu pemain menjalankan langkah pertamanya', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -269,7 +281,7 @@ test('lawan masih bebas diganti walau komputer sudah jalan lebih dulu', () =>
     // kuncinya dipasang pada langkah pertama PAPAN, lawan tidak akan pernah bisa
     // diganti: "Permainan baru" pun langsung disusul langkah komputer.
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('b')
     await nextTick()
     await waitForReply(game)
@@ -285,7 +297,7 @@ test('lawan masih bebas diganti walau komputer sudah jalan lebih dulu', () =>
 test('membatalkan langkah sampai habis membuka kunci lawan lagi', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -301,7 +313,7 @@ test('membatalkan langkah sampai habis membuka kunci lawan lagi', () =>
 test('permainan baru membuka kunci lawan', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -323,7 +335,7 @@ test('mode dua pemain tidak punya lawan untuk dikunci', () =>
 test('warna tidak bisa ditukar setelah pertandingan berjalan', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
     assert.equal(game.humanColor.value, 'w')
@@ -344,7 +356,7 @@ test('warna tidak bisa ditukar setelah pertandingan berjalan', () =>
 test('warna masih bisa dipilih sebelum pemain jalan', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -355,7 +367,7 @@ test('warna masih bisa dipilih sebelum pemain jalan', () =>
 test('permainan baru mengembalikan kebebasan memilih warna', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -376,7 +388,7 @@ test('permainan baru mengembalikan kebebasan memilih warna', () =>
 test('premove diantre selagi giliran mesin, lalu dijalankan otomatis begitu giliran sendiri tiba', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -405,7 +417,7 @@ test('premove diantre selagi giliran mesin, lalu dijalankan otomatis begitu gili
 test('premove yang sudah tidak legal gagal dan menyalakan sorotan gagal, bukan dijalankan diam-diam', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -432,7 +444,7 @@ test('premove yang sudah tidak legal gagal dan menyalakan sorotan gagal, bukan d
 test('premove bisa dibatalkan lewat cancelPremove sebelum giliran sendiri tiba', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -450,7 +462,7 @@ test('premove bisa dibatalkan lewat cancelPremove sebelum giliran sendiri tiba',
 test('mengetuk ulang petak asal premove membatalkannya', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -466,7 +478,7 @@ test('mengetuk ulang petak asal premove membatalkannya', () =>
 test('premove bisa diantre berantai, dihitung dari papan bayangan langkah sebelumnya', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
@@ -491,7 +503,7 @@ test('premove bisa diantre berantai, dihitung dari papan bayangan langkah sebelu
 test('antrean premove dibatasi panjangnya', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     // Posisi dengan banyak ruang kosong di depan raja agar mudah menyusun
     // rentetan langkah raja yang masing-masing tetap legal secara pseudo.
     // Pion h7 sekadar mencegah posisi ini dianggap remis materi tidak cukup
@@ -519,7 +531,7 @@ test('antrean premove dibatasi panjangnya', () =>
 test('mematikan sakelar premove membatalkan yang sudah diantre', () =>
   withGame(async (game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 400
+    game.elo.value = 1320
     game.playAs('w')
     await nextTick()
 
