@@ -322,13 +322,14 @@ const statusText = computed(() => {
     return mine ? t('status.yourTurn') : t('status.waitingMove')
   }
 
+  if (!offline.started.value) return t('status.notStarted')
+
   const state = offline.status.value
   if (state.over) {
     return state.reason === 'checkmate'
       ? t('status.checkmateWin', { winner: colorName(state.winner!) })
       : endMessage(state.reason!)
   }
-  if (offline.thinking.value) return t('status.thinking', { name: host.value.name })
   const color = colorName(turn.value)
   return state.check ? t('status.sideInCheck', { color }) : t('status.sideTurn', { color })
 })
@@ -343,10 +344,14 @@ const statusTone = computed(() => {
     if (state?.over) return state.reason === 'checkmate' ? 'win' : 'draw'
     return state?.check ? 'check' : 'normal'
   }
+  if (!offline.started.value) return 'draw'
+
   const state = offline.status.value
   if (state.over) return state.reason === 'checkmate' ? 'win' : 'draw'
   return state.check ? 'check' : 'normal'
 })
+
+const statusOverlayVisible = computed(() => statusTone.value === 'win' || statusTone.value === 'draw')
 
 // ---------------------------------------------------------------------------
 // Papan nama di atas dan bawah papan
@@ -370,6 +375,9 @@ const faceFor = (color: Color): Opponent | null =>
 
 const topFace = computed(() => faceFor(topColor.value))
 const bottomFace = computed(() => faceFor(bottomColor.value))
+
+const isThinking = (color: Color): boolean =>
+  !isOnline.value && offline.thinking.value && faceFor(color) !== null
 
 function playerLabel(color: Color): string {
   if (isOnline.value) {
@@ -430,6 +438,17 @@ const rematch = () => {
   clearBoardAnnotations()
 }
 
+/*
+ * Tombol di dalam lapisan redup sendiri: online cuma masuk akal begitu
+ * pertandingan benar-benar usai (canRematch) — bukan selagi masih menunggu
+ * lawan bergabung, walau lapisan redupnya sama-sama tampil di kedua kondisi.
+ * Offline selalu boleh, karena "Permainan baru" adalah aksi yang sama baik
+ * untuk memulai maupun mengulang.
+ */
+const overlayActionVisible = computed(() => (isOnline.value ? canRematch.value : true))
+const overlayActionLabel = computed(() => (isOnline.value ? t('room.rematch') : t('controls.newGame')))
+const overlayAction = () => (isOnline.value ? rematch() : resetGame())
+
 function onKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
   if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return
@@ -487,6 +506,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             @click="appMode = 'online'"
           >
             {{ t('app.modeOnline') }}
+            <span
+              v-if="online.status.value === 'tersambung'"
+              class="modes__status"
+              :title="t('app.serverOnline')"
+              aria-hidden="true"
+            />
           </button>
         </nav>
         <LanguageSwitch />
@@ -505,7 +530,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <OpponentFace v-if="topFace" :opponent="topFace" />
             <span class="player__dot" :class="`player__dot--${topColor}`" />
             <span class="player__name">{{ playerLabel(topColor) }}</span>
-            <span v-if="turn === topColor" class="player__turn">{{ t('player.turnBadge') }}</span>
+            <span v-if="turn === topColor" class="player__turn" :class="{ 'player__turn--thinking': isThinking(topColor) }">
+              <span v-if="isThinking(topColor)" class="status__spinner" aria-hidden="true" />
+              {{ isThinking(topColor) ? t('player.thinkingBadge') : t('player.turnBadge') }}
+            </span>
           </div>
           <CapturedPieces
             :color="opponent(topColor)"
@@ -514,30 +542,51 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           />
         </div>
 
-        <ChessBoard
-          ref="chessBoardRef"
-          :board="board"
-          :orientation="orientation"
-          :selected="selected"
-          :targets="targets"
-          :last-move="lastMove"
-          :check-square="checkSquare"
-          :playable="canPlay"
-          :premove-color="premoveColor"
-          :premove-queue="premoveQueue"
-          :premove-failed="premoveFailed"
-          :show-hints="offline.showHints.value"
-          @activate="activateSquare"
-          @drop="dropPiece"
-          @right-click="cancelPremove"
-        />
+        <div class="board-wrap">
+          <ChessBoard
+            ref="chessBoardRef"
+            :board="board"
+            :orientation="orientation"
+            :selected="selected"
+            :targets="targets"
+            :last-move="lastMove"
+            :check-square="checkSquare"
+            :playable="canPlay"
+            :premove-color="premoveColor"
+            :premove-queue="premoveQueue"
+            :premove-failed="premoveFailed"
+            :show-hints="offline.showHints.value"
+            @activate="activateSquare"
+            @drop="dropPiece"
+            @right-click="cancelPremove"
+          />
+
+          <Transition name="board-dim">
+            <div v-if="statusOverlayVisible" class="board-dim">
+              <div class="status status--center" :class="`status--${statusTone}`">
+                <span>{{ statusText }}</span>
+                <button
+                  v-if="overlayActionVisible"
+                  type="button"
+                  class="status__action"
+                  @click="overlayAction"
+                >
+                  {{ overlayActionLabel }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
 
         <div class="player">
           <div class="player__id">
             <OpponentFace v-if="bottomFace" :opponent="bottomFace" />
             <span class="player__dot" :class="`player__dot--${bottomColor}`" />
             <span class="player__name">{{ playerLabel(bottomColor) }}</span>
-            <span v-if="turn === bottomColor" class="player__turn">{{ t('player.turnBadge') }}</span>
+            <span v-if="turn === bottomColor" class="player__turn" :class="{ 'player__turn--thinking': isThinking(bottomColor) }">
+              <span v-if="isThinking(bottomColor)" class="status__spinner" aria-hidden="true" />
+              {{ isThinking(bottomColor) ? t('player.thinkingBadge') : t('player.turnBadge') }}
+            </span>
           </div>
           <CapturedPieces
             :color="opponent(bottomColor)"
@@ -555,11 +604,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       </div>
 
       <aside class="panel">
-        <div class="status" :class="`status--${statusTone}`">
-          <span v-if="offline.thinking.value && !isOnline" class="status__spinner" aria-hidden="true" />
-          <span>{{ statusText }}</span>
-        </div>
-
         <div v-if="!isLive" class="premove-banner">
           <span>{{ t('history.viewing', { ply: displayPly, total: plyCount }) }}</span>
           <button type="button" class="premove-banner__cancel" @click="backToLive">
@@ -716,6 +760,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .modes__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.4rem 0.9rem;
   font: inherit;
   font-size: 0.84rem;
@@ -734,6 +781,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   background: var(--accent);
   color: var(--on-accent);
   font-weight: 600;
+}
+
+.modes__status {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  background: #3fb950;
+  border-radius: 50%;
+  box-shadow: 0 0 0.3rem #3fb950;
 }
 
 .layout {
@@ -794,6 +850,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .player__turn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   padding: 0.1rem 0.4rem;
   font-size: 0.68rem;
   text-transform: uppercase;
@@ -802,6 +861,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   background: var(--accent-soft);
   border-radius: 0.3rem;
   flex-shrink: 0;
+}
+
+.player__turn--thinking .status__spinner {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-width: 1.5px;
 }
 
 .panel {
@@ -827,6 +892,77 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   border: 1px solid var(--border);
   border-left: 3px solid var(--text-muted);
   border-radius: 0.5rem;
+}
+
+.board-wrap {
+  position: relative;
+}
+
+.board-dim {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius);
+  z-index: 10;
+}
+
+.status--center {
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem 1.3rem;
+  background: var(--panel);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+
+.status__action {
+  padding: 0.5rem 1.1rem;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  color: var(--on-accent);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.status__action:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.board-dim-enter-active,
+.board-dim-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.board-dim-enter-active .status--center,
+.board-dim-leave-active .status--center {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.board-dim-enter-from,
+.board-dim-leave-to {
+  opacity: 0;
+}
+
+.board-dim-enter-from .status--center,
+.board-dim-leave-to .status--center {
+  transform: scale(0.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-dim-enter-active,
+  .board-dim-leave-active,
+  .board-dim-enter-active .status--center,
+  .board-dim-leave-active .status--center {
+    transition: none;
+  }
 }
 
 .status--check {

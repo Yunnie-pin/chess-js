@@ -10,6 +10,7 @@ export const en: Messages = {
   'app.subtitle': 'Vue 3 · TypeScript · full FIDE rules',
   'app.modeLocal': 'Local',
   'app.modeOnline': 'Online',
+  'app.serverOnline': 'Connected to server',
   'app.language': 'Language',
   'settings.title': 'Settings',
 
@@ -23,6 +24,7 @@ export const en: Messages = {
   'piece.p': 'Pawn',
   'piece.ariaLabel': '{color} {piece}',
 
+  'status.notStarted': 'Press "New game" to start',
   'status.noRoom': 'Not in a room yet',
   'status.waitingOpponent': 'Waiting for an opponent to join…',
   'status.resigned': '{loser} resigned — {winner} wins',
@@ -32,7 +34,6 @@ export const en: Messages = {
   'status.opponentInCheck': 'Your opponent is in check!',
   'status.yourTurn': 'Your turn',
   'status.waitingMove': 'Waiting for their move…',
-  'status.thinking': '{name} is thinking…',
   'status.sideInCheck': '{color} is in check!',
   'status.sideTurn': '{color} to move',
 
@@ -48,6 +49,7 @@ export const en: Messages = {
   'player.human': 'You ({color})',
   'player.computer': '{name} ({color})',
   'player.turnBadge': 'to move',
+  'player.thinkingBadge': 'thinking…',
 
   'board.ariaLabel': 'Chess board',
   'board.flip': 'Flip board',

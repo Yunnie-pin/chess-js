@@ -17,6 +17,7 @@ export const id = {
   'app.subtitle': 'Vue 3 · TypeScript · aturan lengkap FIDE',
   'app.modeLocal': 'Lokal',
   'app.modeOnline': 'Online',
+  'app.serverOnline': 'Tersambung ke server',
   'app.language': 'Bahasa',
   'settings.title': 'Pengaturan',
 
@@ -33,6 +34,7 @@ export const id = {
   'piece.ariaLabel': '{piece} {color}',
 
   // Baris status
+  'status.notStarted': 'Tekan "Permainan baru" untuk mulai',
   'status.noRoom': 'Belum berada di room mana pun',
   'status.waitingOpponent': 'Menunggu lawan bergabung…',
   'status.resigned': '{loser} menyerah — {winner} menang',
@@ -42,7 +44,6 @@ export const id = {
   'status.opponentInCheck': 'Lawan sedang skak!',
   'status.yourTurn': 'Giliran Anda',
   'status.waitingMove': 'Menunggu langkah lawan…',
-  'status.thinking': '{name} sedang berpikir…',
   'status.sideInCheck': '{color} sedang skak!',
   'status.sideTurn': 'Giliran {color}',
 
@@ -61,6 +62,7 @@ export const id = {
   /* Sisi mesin diberi nama karakternya; strukturnya tetap bisa diatur per bahasa. */
   'player.computer': '{name} ({color})',
   'player.turnBadge': 'giliran',
+  'player.thinkingBadge': 'berpikir…',
 
   // Papan
   'board.ariaLabel': 'Papan catur',

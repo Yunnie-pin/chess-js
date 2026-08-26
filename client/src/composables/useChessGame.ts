@@ -112,6 +112,14 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   const thinking = ref(false)
   const lastSearch = ref<{ depth: number; nodes: number; timeMs: number } | null>(null)
 
+  /**
+   * Papan sudah tampil dari awal (posisi awal langsung digambar), tapi belum
+   * bisa disentuh sampai pemain sendiri menekan "Permainan baru" — sekali
+   * saja. Sebelum itu, baik pemain maupun mesin sama-sama tidak boleh jalan;
+   * `reset()` yang menyalakannya, dan sesudah itu tetap menyala seterusnya.
+   */
+  const started = ref(false)
+
   // ------------------------------------------------------------------
   // Turunan dari posisi
   // ------------------------------------------------------------------
@@ -241,14 +249,14 @@ export function useChessGame(options: UseChessGameOptions = {}) {
 
   /** Manusia boleh menggerakkan warna ini sekarang. */
   const canPlay = computed<Color | null>(() => {
-    if (status.value.over || thinking.value || pendingPromotion.value) return null
+    if (!started.value || status.value.over || thinking.value || pendingPromotion.value) return null
     if (mode.value === 'dua-pemain') return turn.value
     return turn.value === humanColor.value ? turn.value : null
   })
 
   /** Warna yang boleh menyiapkan premove sekarang — giliran mesin, tapi manusia sudah tahu mau ke mana. */
   const premoveColor = computed<Color | null>(() => {
-    if (!premoveEnabled.value) return null
+    if (!started.value || !premoveEnabled.value) return null
     if (mode.value !== 'lawan-komputer' || status.value.over || humanColor.value === null) return null
     return turn.value !== humanColor.value ? humanColor.value : null
   })
@@ -510,6 +518,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     selected.value = null
     pendingPromotion.value = null
     lastSearch.value = null
+    started.value = true
     bump()
     scheduleAi()
   }
@@ -589,7 +598,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
    * lagi dipanggil dari sini sama sekali, bukan sekadar cadangan.
    */
   function scheduleAi(): void {
-    if (mode.value !== 'lawan-komputer') return
+    if (!started.value || mode.value !== 'lawan-komputer') return
     if (position.turn !== aiColor.value) return
     if (position.status().over || pendingPromotion.value) return
 
@@ -656,6 +665,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     canPlay,
     humanColor,
     setupLocked,
+    started,
     pendingPromotion,
     premoveQueue,
     premoveFailed,

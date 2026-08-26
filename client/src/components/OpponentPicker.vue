@@ -10,6 +10,7 @@
  *
  * Tampilan tiap barisnya ada di `OpponentCard`; di sini hanya kelompoknya.
  */
+import { computed } from 'vue'
 import { useI18n } from '../i18n/index.ts'
 import { OPPONENT_LIST } from '../opponents.ts'
 import OpponentCard from './OpponentCard.vue'
@@ -18,9 +19,14 @@ import type { EloRating } from '@chess/shared/ai'
 const elo = defineModel<EloRating>({ required: true })
 
 /** Terkunci selagi pertandingan berjalan; lihat `setupLocked` di useChessGame. */
-defineProps<{ locked?: boolean }>()
+const props = defineProps<{ locked?: boolean }>()
 
 const { t } = useI18n()
+
+/** Terkunci: hanya lawan yang sedang dipakai yang tersisa untuk ditampilkan. */
+const visibleOpponents = computed(() =>
+  props.locked ? OPPONENT_LIST.filter((option) => option.elo === elo.value) : OPPONENT_LIST
+)
 </script>
 
 <template>
@@ -33,14 +39,16 @@ const { t } = useI18n()
   <fieldset class="picker" :disabled="locked">
     <legend class="picker__legend">{{ t('controls.strength') }}</legend>
 
-    <OpponentCard
-      v-for="option in OPPONENT_LIST"
-      :key="option.id"
-      :opponent="option"
-      :selected="elo === option.elo"
-      group="lawan"
-      @select="elo = option.elo"
-    />
+    <TransitionGroup name="opp-card">
+      <OpponentCard
+        v-for="option in visibleOpponents"
+        :key="option.id"
+        :opponent="option"
+        :selected="elo === option.elo"
+        group="lawan"
+        @select="elo = option.elo"
+      />
+    </TransitionGroup>
     <!-- Keterangan kuncinya ada di GameControls, di bawah pemilih warna: kunci
          yang sama menaungi keduanya, jadi penjelasannya ditaruh setelah dua-duanya. -->
   </fieldset>
@@ -49,11 +57,39 @@ const { t } = useI18n()
 <style scoped>
 /* <fieldset> datang dengan bingkai dan jarak bawaan browser; dikosongkan dulu. */
 .picker {
+  position: relative;
   display: grid;
   gap: 0.3rem;
   margin: 0;
   padding: 0;
   border: none;
+}
+
+/*
+ * Yang keluar (empat kartu tidak terpilih, begitu terkunci) meluruh di tempat
+ * lalu dilepas dari alur grid — supaya kartu yang tersisa naik lewat animasi
+ * `move`, bukan meloncat begitu elemen-elemen lain lenyap serentak.
+ */
+.opp-card-leave-active {
+  position: absolute;
+  width: 100%;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.opp-card-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.opp-card-move {
+  transition: transform 0.22s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .opp-card-leave-active,
+  .opp-card-move {
+    transition: none;
+  }
 }
 
 .picker__legend {
@@ -66,23 +102,17 @@ const { t } = useI18n()
 }
 
 /*
- * Saat terkunci: yang tidak terpilih meredup, yang terpilih tetap terang penuh.
- * Pemain masih perlu melihat sedang melawan siapa — meredupkan semuanya justru
- * menghapus satu-satunya keterangan yang masih berguna di sini.
+ * Saat terkunci, kartu yang tidak terpilih dihapus dari DOM lewat v-if
+ * (bukan sekadar diredupkan) — pemain tidak bisa menggantinya lagi, jadi
+ * empat pilihan yang tidak relevan hanya menghabiskan tempat di sidebar.
  *
  * `:deep()` karena kartunya komponen anak dengan gaya ber-scope sendiri.
  */
 .picker[disabled] :deep(.card) {
   cursor: default;
-  opacity: 0.45;
 }
 
 .picker[disabled] :deep(.card:hover) {
   background: var(--surface);
 }
-
-.picker[disabled] :deep(.card--on) {
-  opacity: 1;
-}
-
 </style>

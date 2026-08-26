@@ -31,7 +31,9 @@ async function stubFindBestMove(fen: string) {
 
 /**
  * Menjalankan composable di dalam effect scope tersendiri, persis seperti saat
- * dipakai komponen.
+ * dipakai komponen. Ditandai "sudah dimulai" di sini karena tes-tes di berkas
+ * ini menguji perilaku permainan sesudah "Permainan baru" ditekan, bukan
+ * keadaan sebelum itu — itu diuji terpisah lewat `withFreshGame`.
  */
 function withGame(run: (game: Game) => void | Promise<void>): Promise<void> {
   const scope = effectScope()
@@ -39,6 +41,18 @@ function withGame(run: (game: Game) => void | Promise<void>): Promise<void> {
   scope.run(() => {
     const game = useChessGame({ findBestMove: stubFindBestMove })
     game.mode.value = 'dua-pemain' // matikan komputer kecuali tes memintanya
+    game.started.value = true
+    result = run(game)
+  })
+  return Promise.resolve(result).finally(() => scope.stop())
+}
+
+/** Sama seperti `withGame`, tapi TANPA menandai sudah dimulai — untuk menguji keadaan sebelum "Permainan baru". */
+function withFreshGame(run: (game: Game) => void | Promise<void>): Promise<void> {
+  const scope = effectScope()
+  let result: void | Promise<void>
+  scope.run(() => {
+    const game = useChessGame({ findBestMove: stubFindBestMove })
     result = run(game)
   })
   return Promise.resolve(result).finally(() => scope.stop())
@@ -560,4 +574,38 @@ test('mematikan sakelar undo membuat undo() tidak melakukan apa-apa', () =>
     game.undoEnabled.value = true
     game.undo()
     assert.equal(game.history.value.length, 0, 'menyala lagi, undo berjalan seperti biasa')
+  }))
+
+// ---------------------------------------------------------------------------
+// Belum dimulai
+// ---------------------------------------------------------------------------
+
+test('papan belum bisa disentuh sebelum "Permainan baru" ditekan', () =>
+  withFreshGame((game) => {
+    assert.equal(game.canPlay.value, null, 'terkunci walau posisi awal sudah tergambar')
+
+    click(game, 'e2', 'e4')
+    assert.equal(game.history.value.length, 0, 'klik tidak boleh menjalankan apa pun')
+    assert.equal(game.selected.value, null, 'bidak juga tidak boleh sekadar terpilih')
+  }))
+
+test('mesin tidak jalan lebih dulu sebelum "Permainan baru", walau pemain sudah memilih hitam', () =>
+  withFreshGame(async (game) => {
+    game.playAs('b') // mesin (putih) seharusnya jalan lebih dulu begitu dimulai
+    await nextTick()
+    await sleep(300)
+
+    assert.equal(game.thinking.value, false, 'mesin tidak boleh mulai berpikir sebelum dimulai')
+    assert.equal(game.history.value.length, 0)
+  }))
+
+test('"Permainan baru" membuka papan untuk mulai dimainkan', () =>
+  withFreshGame((game) => {
+    assert.equal(game.canPlay.value, null)
+
+    game.reset()
+    assert.equal(game.canPlay.value, 'w', 'putih boleh jalan begitu permainan dimulai')
+
+    click(game, 'e2', 'e4')
+    assert.equal(game.history.value.length, 1)
   }))
