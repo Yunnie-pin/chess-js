@@ -10,16 +10,11 @@
  *
  * Berkas potret memang tidak disimpan di repo, jadi keadaan "belum ada" adalah
  * keadaan normal, bukan kasus tepi.
- *
- * `enabled` menahan pemeriksaan itu sendiri, bukan sekadar hasilnya. Bedanya
- * penting: memeriksa berarti mengunduh berkasnya, jadi pemanggil yang gambarnya
- * cuma tampil di sebagian ukuran layar tidak bisa cukup menyembunyikannya lewat
- * CSS — `display: none` tetap membayar unduhannya.
  */
 
 import { onScopeDispose, ref, watch, type Ref } from 'vue'
 
-export function useOptionalImage(src: Ref<string>, enabled?: Ref<boolean>) {
+export function useOptionalImage(src: Ref<string>) {
   const ready = ref(false)
 
   let probe: HTMLImageElement | null = null
@@ -32,11 +27,9 @@ export function useOptionalImage(src: Ref<string>, enabled?: Ref<boolean>) {
     probe = null
   }
 
-  function check(): void {
+  function check(url: string): void {
     cancel()
     ready.value = false
-    const url = src.value
-    if (enabled && !enabled.value) return
     if (typeof Image === 'undefined' || !url) return
 
     const current = new Image()
@@ -51,9 +44,7 @@ export function useOptionalImage(src: Ref<string>, enabled?: Ref<boolean>) {
     current.src = url
   }
 
-  // Keduanya dilacak: berganti sumber jelas memicu pemeriksaan ulang, dan
-  // layar yang baru saja cukup lebar juga — gambarnya belum pernah diunduh.
-  watch([src, () => enabled?.value ?? true], check, { immediate: true })
+  watch(src, check, { immediate: true })
   onScopeDispose(cancel)
 
   return { ready }

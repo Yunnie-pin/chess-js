@@ -153,15 +153,7 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
   transition: background 0.15s, color 0.15s;
 }
 
-/* Hover dikurung supaya tidak menempel setelah diketuk di layar sentuh; lihat
-   catatan panjangnya di App.vue. */
-@media (hover: hover) {
-  .segmented__item:hover:not(:disabled) {
-    color: var(--text);
-  }
-}
-
-.segmented__item:active:not(:disabled) {
+.segmented__item:hover:not(:disabled) {
   color: var(--text);
 }
 
@@ -212,14 +204,7 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
   transition: background 0.15s, border-color 0.15s;
 }
 
-@media (hover: hover) {
-  .btn:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--text-muted);
-  }
-}
-
-.btn:active:not(:disabled) {
+.btn:hover:not(:disabled) {
   background: var(--surface-hover);
   border-color: var(--text-muted);
 }
@@ -236,14 +221,7 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
   font-weight: 600;
 }
 
-@media (hover: hover) {
-  .btn--primary:hover:not(:disabled) {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
-  }
-}
-
-.btn--primary:active:not(:disabled) {
+.btn--primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }

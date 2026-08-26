@@ -31,7 +31,7 @@ For local play only (vs computer / two players) you don't need the server —
 | `npm run dev`        | Server + client together                  |
 | `npm run dev:server` | Multiplayer server only                   |
 | `npm run dev:client` | UI only                                   |
-| `npm test`           | 145 tests across the three workspaces     |
+| `npm test`           | 136 tests across the three workspaces     |
 | `npm run typecheck`  | Strict TypeScript, Vue templates included |
 | `npm run build`      | Build the client into `client/dist/`      |
 | `npm start`          | Run the server for production             |
@@ -347,7 +347,7 @@ quietly falling back to the retained engine.
 ```
 shared/   39 tests   perft, SAN, draws, Zobrist hash consistency, the retained engine's Elo ladder
 server/   28 tests   room rules, seats, tokens; plus real WebSocket integration
-client/   78 tests   local game state, premove, dictionaries, opponent palettes, image gating, end-to-end
+client/   69 tests   local game state, premove, dictionaries, opponent palettes, end-to-end
 ```
 
 The server and client tests both spin up a real server process on their own port

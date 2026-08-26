@@ -127,15 +127,7 @@ const describe = (player: PlayerView): string =>
   white-space: nowrap;
 }
 
-/* Hover dikurung supaya tidak menempel setelah diketuk; lihat catatannya di App.vue. */
-@media (hover: hover) {
-  .copy:hover {
-    color: var(--text);
-    border-color: var(--text-muted);
-  }
-}
-
-.copy:active {
+.copy:hover {
   color: var(--text);
   border-color: var(--text-muted);
 }
@@ -246,14 +238,7 @@ const describe = (player: PlayerView): string =>
   cursor: pointer;
 }
 
-@media (hover: hover) {
-  .btn:hover {
-    background: var(--surface-hover);
-    border-color: var(--text-muted);
-  }
-}
-
-.btn:active {
+.btn:hover {
   background: var(--surface-hover);
   border-color: var(--text-muted);
 }

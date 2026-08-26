@@ -55,24 +55,6 @@ const emit = defineEmits<{
   rightClick: []
 }>()
 
-/**
- * Bidak yang diseret jari digambar di ATAS titik sentuhnya, bukan tepat di
- * bawahnya — kalau tidak, ujung jari menutupinya sepenuhnya, dan di ponsel satu
- * petak hanya sekitar 44px sementara area sentuh jari menutupi hampir tiga
- * petak. Angkatannya dipatok dalam piksel, bukan pecahan petak: yang harus
- * dilewati adalah ukuran jari, dan itu tidak ikut membesar bersama papan.
- *
- * Petak tujuan dihitung dari titik yang SUDAH diangkat ini juga (lihat
- * `dragPoint`), bukan dari posisi jari mentah. Kalau keduanya dibiarkan
- * berbeda, bidak terlihat melayang di atas satu petak tapi mendarat di petak
- * lain di bawahnya — lebih membingungkan daripada bidak yang tertutup jari.
- */
-const TOUCH_LIFT_PX = 44
-const TOUCH_DRAG_SCALE = 1.2
-
-/** Geser sejauh ini masih dihitung ketukan, bukan gulir. */
-const TAP_SLOP_PX = 10
-
 const boardEl = ref<HTMLElement | null>(null)
 
 interface DragState {
@@ -82,29 +64,8 @@ interface DragState {
   y: number
   pointerId: number
   moved: boolean
-  pointerType: string
 }
 const drag = ref<DragState | null>(null)
-
-/**
- * Ketukan pada petak yang TIDAK bisa diseret ditunda sampai `pointerup`.
- *
- * Petak seperti itu sengaja membiarkan halaman digulir (lihat `touch-action` di
- * blok style), dan gulir dimulai dengan `pointerdown` yang sama persis dengan
- * ketukan. Kalau `activate` tetap dipancarkan di `pointerdown`, setiap kali
- * pemain menggulir halaman dari atas papan selagi ada bidak terpilih, gulirnya
- * ikut menjalankan langkah. Menunggu sampai jari diangkat — dan memastikan ia
- * nyaris tidak bergeser — memisahkan keduanya. Tetikus tidak lewat sini sama
- * sekali: ia tidak menggulir dengan menyeret, jadi tetap langsung di
- * `pointerdown` supaya terasa seketika.
- */
-interface TapState {
-  square: Square
-  pointerId: number
-  x: number
-  y: number
-}
-const tap = ref<TapState | null>(null)
 
 interface RightDragState {
   from: Square
@@ -181,21 +142,6 @@ function onPointerDown(square: Square, event: PointerEvent): void {
   // Klik kiri membersihkan anotasi papan, seperti pada situs catur pada umumnya.
   if (arrows.value.length || marks.value.size) clearAnnotations()
 
-  const grabbable = !!props.board[square] && canGrab(square)
-
-  if (event.pointerType === 'touch' && !grabbable) {
-    tap.value = {
-      square,
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY
-    }
-    window.addEventListener('pointermove', onTapPointerMove)
-    window.addEventListener('pointerup', onTapPointerUp)
-    window.addEventListener('pointercancel', endTap)
-    return
-  }
-
   emit('activate', square)
 
   const piece = props.board[square]
@@ -208,41 +154,11 @@ function onPointerDown(square: Square, event: PointerEvent): void {
     x: event.clientX,
     y: event.clientY,
     pointerId: event.pointerId,
-    moved: false,
-    pointerType: event.pointerType
+    moved: false
   }
   window.addEventListener('pointermove', onPointerMove)
   window.addEventListener('pointerup', onPointerUp)
   window.addEventListener('pointercancel', endDrag)
-}
-
-/** Jarak tempuh pointer sejak ketukan dimulai. */
-function tapDistance(state: TapState, event: PointerEvent): number {
-  return Math.hypot(event.clientX - state.x, event.clientY - state.y)
-}
-
-function onTapPointerMove(event: PointerEvent): void {
-  const state = tap.value
-  if (!state || event.pointerId !== state.pointerId) return
-  // Sudah bergeser jauh: ini gulir. Lepaskan, jangan sampai jadi langkah.
-  if (tapDistance(state, event) > TAP_SLOP_PX) endTap()
-}
-
-function onTapPointerUp(event: PointerEvent): void {
-  const state = tap.value
-  if (!state || event.pointerId !== state.pointerId) return
-  const isTap = tapDistance(state, event) <= TAP_SLOP_PX
-  const { square } = state
-  endTap()
-  if (isTap) emit('activate', square)
-}
-
-/** Peramban juga membatalkan sendiri lewat `pointercancel` begitu ia mengambil alih gestur untuk menggulir. */
-function endTap(): void {
-  tap.value = null
-  window.removeEventListener('pointermove', onTapPointerMove)
-  window.removeEventListener('pointerup', onTapPointerUp)
-  window.removeEventListener('pointercancel', endTap)
 }
 
 function onRightPointerMove(event: PointerEvent): void {
@@ -364,25 +280,12 @@ function onPointerMove(event: PointerEvent): void {
   state.moved = true
 }
 
-/**
- * Titik acuan seret: posisi pointer, diangkat bila itu jari.
- *
- * Satu fungsi untuk dua pemakaian — menggambar bidaknya dan menentukan petak
- * tujuannya — supaya yang terlihat dan yang terjadi tidak mungkin berbeda.
- */
-function dragPoint(state: DragState): { x: number; y: number } {
-  return { x: state.x, y: state.y - (state.pointerType === 'touch' ? TOUCH_LIFT_PX : 0) }
-}
-
 function onPointerUp(event: PointerEvent): void {
   const state = drag.value
   if (!state || event.pointerId !== state.pointerId) return
   // Klik tanpa geser sudah ditangani oleh 'activate' pada pointerdown.
   if (state.moved) {
-    state.x = event.clientX
-    state.y = event.clientY
-    const point = dragPoint(state)
-    const target = squareFromPoint(point.x, point.y)
+    const target = squareFromPoint(event.clientX, event.clientY)
     if (target !== null) emit('drop', state.from, target)
   }
   endDrag()
@@ -397,7 +300,6 @@ function endDrag(): void {
 
 onBeforeUnmount(() => {
   endDrag()
-  endTap()
   endRightDrag()
 })
 
@@ -405,15 +307,12 @@ onBeforeUnmount(() => {
 const dragStyle = computed(() => {
   const state = drag.value
   if (!state || !state.moved) return undefined
-  // Sedikit lebih besar saat diseret jari — memperkuat kesan "sedang dipegang"
-  // pada petak yang di ponsel memang kecil.
-  const drawn = squareSize() * (state.pointerType === 'touch' ? TOUCH_DRAG_SCALE : 1)
-  const point = dragPoint(state)
+  const size = squareSize()
   return {
-    width: `${drawn}px`,
-    height: `${drawn}px`,
-    fontSize: `${drawn}px`,
-    transform: `translate(${point.x - drawn / 2}px, ${point.y - drawn / 2}px)`
+    width: `${size}px`,
+    height: `${size}px`,
+    fontSize: `${size}px`,
+    transform: `translate(${state.x - size / 2}px, ${state.y - size / 2}px)`
   }
 })
 </script>
@@ -442,8 +341,7 @@ const dragStyle = computed(() => {
           'square--premove-failed':
             square === props.premoveFailed?.from || square === props.premoveFailed?.to,
           'square--marked': marks.has(square),
-          'square--grabbable': canGrab(square),
-          'square--target': props.targets.has(square)
+          'square--grabbable': canGrab(square)
         }"
         :style="marks.has(square) ? { '--mark-color': ANNOTATION_COLORS[marks.get(square)!] } : undefined"
         role="gridcell"
@@ -524,10 +422,7 @@ const dragStyle = computed(() => {
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: 0 18px 40px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.06);
-  /* Kotak sorot bawaan Android digambar per petak dan terlihat seperti
-     kerusakan tampilan di atas papan; umpan baliknya sudah ada dari sorotan
-     petak yang kita gambar sendiri. */
-  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
 }
 
 .board--dragging {
@@ -542,32 +437,6 @@ const dragStyle = computed(() => {
      0.85em dari angka itu, jadi ukurannya selalu proporsional terhadap papan —
      dan sama persis dengan bidak yang sedang diseret. */
   font-size: 12.5cqw;
-  /*
-   * Papan tidak boleh menelan gulir halaman.
-   *
-   * Dulu `touch-action: none` dipasang pada SELURUH papan. Di desktop itu tidak
-   * terasa, tapi di ponsel layoutnya satu kolom dan papan memenuhi lebar layar,
-   * sementara status, kontrol, dan daftar langkah semuanya ada di bawahnya —
-   * jadi bagian terbesar halaman justru mati untuk digulir, dan pemain harus
-   * mencari pita sempit di atas atau di bawah papan.
-   *
-   * Sekarang hanya petak yang memang jadi milik kita yang menahan gestur
-   * (lihat aturan di bawah); sisanya menggulir seperti halaman biasa.
-   * `manipulation` mematikan tunda dobel-ketuk-untuk-perbesar, yang di papan
-   * ini tidak ada gunanya dan hanya membuat ketukan terasa lambat.
-   */
-  touch-action: manipulation;
-}
-
-/*
- * Bidak yang bisa diangkat, dan petak tujuan yang sedang disorot: gestur di
- * sini milik papan, bukan milik gulir. Petak tujuan ikut disebut supaya
- * menyeret bidak yang sudah terpilih ke tujuannya tidak berubah jadi gulir di
- * tengah jalan.
- */
-.square--grabbable,
-.square--target {
-  touch-action: none;
 }
 
 .square--light {
@@ -603,16 +472,9 @@ const dragStyle = computed(() => {
   background: var(--highlight-last);
 }
 
-/*
- * Tebal garis ikut menskala bersama papan, seperti bidak dan hint — `em` di
- * sini adalah 12.5cqw milik `.square`, yaitu satu petak. Sebelumnya angkanya px
- * tetap, jadi di papan ponsel (petak ~44px) garis 3px terbaca dua kali lebih
- * tebal daripada di desktop (petak ~88px). `max()` menjaga lantainya: murni
- * proporsional akan terlalu tipis untuk dilihat di petak sekecil itu.
- */
 .square--selected::before {
   background: var(--highlight-selected);
-  box-shadow: inset 0 0 0 max(2px, 0.035em) var(--accent);
+  box-shadow: inset 0 0 0 3px var(--accent);
 }
 
 .square--check::before {
@@ -622,7 +484,7 @@ const dragStyle = computed(() => {
 /* Langkah yang sudah diantre (premove), menunggu giliran sendiri tiba. */
 .square--premove::before {
   background: rgba(88, 140, 255, 0.32);
-  box-shadow: inset 0 0 0 max(2px, 0.035em) rgba(88, 140, 255, 0.8);
+  box-shadow: inset 0 0 0 3px rgba(88, 140, 255, 0.8);
 }
 
 /* Kedip merah sesaat saat premove ternyata sudah tidak legal begitu dieksekusi. */
@@ -694,9 +556,7 @@ const dragStyle = computed(() => {
 .hint--capture {
   inset: 6%;
   border-radius: 50%;
-  /* Sama alasannya dengan garis sorotan di atas: px tetap membuat cincin ini
-     menelan bidak di dalamnya begitu petaknya mengecil. */
-  border: max(3px, 0.07em) solid var(--hint);
+  border: 6px solid var(--hint);
 }
 
 .coord {

@@ -206,15 +206,7 @@ const submitJoin = () => {
   cursor: pointer;
 }
 
-/* Hover dikurung supaya tidak menempel setelah diketuk; lihat catatannya di App.vue. */
-@media (hover: hover) {
-  .btn:hover:not(:disabled) {
-    background: var(--surface-hover);
-    border-color: var(--text-muted);
-  }
-}
-
-.btn:active:not(:disabled) {
+.btn:hover:not(:disabled) {
   background: var(--surface-hover);
   border-color: var(--text-muted);
 }

@@ -119,46 +119,6 @@ input {
   outline-offset: 2px;
 }
 
-/*
- * Kotak sorot biru/abu bawaan Android saat sesuatu diketuk. Umpan balik
- * ketukan di aplikasi ini sudah digambar sendiri lewat `:active` dan sorotan
- * petak, dan kotak bawaan itu justru terbaca seperti kerusakan tampilan karena
- * bentuknya tidak mengikuti sudut membulat elemennya.
- */
-button,
-a,
-[role='button'] {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/*
- * Ukuran minimum target sentuh.
- *
- * Diletakkan di sini, bukan di masing-masing komponen, karena ini urusan yang
- * memotong seluruh aplikasi — sama seperti palet warna di atas — dan karena
- * menyasar elemen `button` alih-alih nama kelas membuatnya ikut berlaku untuk
- * tombol yang belum ditulis. Tidak ada komponen yang menyetel `min-height`
- * sendiri, jadi aturan ini tidak pernah bertabrakan dengan style bercakupan.
- *
- * `pointer: coarse` — bukan lebar layar — karena yang menentukan memang jari,
- * bukan sempitnya jendela.
- */
-@media (pointer: coarse) {
-  button {
-    min-height: 2.75rem;
-  }
-
-  /*
-   * Kecuali daftar langkah. Di sana tombolnya berpuluh-puluh dan berjejer ke
-   * bawah, jadi 2.75rem membuat daftarnya hanya memuat enam baris di kotak
-   * setinggi 17rem. Cukup dinaikkan dari ~23px ke ambang minimum yang masih
-   * masuk akal untuk diketuk.
-   */
-  .history__move {
-    min-height: 2rem;
-  }
-}
-
 ::-webkit-scrollbar {
   width: 8px;
 }

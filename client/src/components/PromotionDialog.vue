@@ -106,21 +106,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 
-/*
- * `transform` di sini yang membuat pengurungan hover paling terasa perlu: di
- * layar sentuh, tombol yang barusan dipilih tertinggal dalam keadaan terangkat
- * sampai ada ketukan lain, seolah masih ditunjuk.
- */
-@media (hover: hover) {
-  .option:hover {
-    background: var(--surface-hover);
-    border-color: var(--accent);
-    transform: translateY(-2px);
-  }
-}
-
-.option:focus-visible,
-.option:active {
+.option:hover,
+.option:focus-visible {
   background: var(--surface-hover);
   border-color: var(--accent);
   transform: translateY(-2px);
@@ -143,14 +130,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   cursor: pointer;
 }
 
-@media (hover: hover) {
-  .cancel:hover {
-    color: var(--text);
-    border-color: var(--text-muted);
-  }
-}
-
-.cancel:active {
+.cancel:hover {
   color: var(--text);
   border-color: var(--text-muted);
 }

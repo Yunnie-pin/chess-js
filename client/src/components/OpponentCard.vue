@@ -81,11 +81,8 @@ const { ready: hasFace } = useOptionalImage(faceSource)
   --halo-size: 2.1rem;
 }
 
-/* Hover dikurung supaya tidak menempel setelah diketuk; lihat catatannya di App.vue. */
-@media (hover: hover) {
-  .card:hover {
-    background: var(--surface-hover);
-  }
+.card:hover {
+  background: var(--surface-hover);
 }
 
 /*
@@ -206,10 +203,8 @@ const { ready: hasFace } = useOptionalImage(faceSource)
   transition: opacity 0.18s, transform 0.18s;
 }
 
-@media (hover: hover) {
-  .card:hover .card__face {
-    opacity: 0.65;
-  }
+.card:hover .card__face {
+  opacity: 0.65;
 }
 
 /* Yang terpilih tampil paling jelas — itu satu-satunya yang sedang kamu lawan. */

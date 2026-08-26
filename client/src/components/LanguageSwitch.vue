@@ -51,14 +51,7 @@ const { t, locale, setLocale } = useI18n()
   transition: background 0.15s, color 0.15s;
 }
 
-/* Hover dikurung supaya tidak menempel setelah diketuk; lihat catatannya di App.vue. */
-@media (hover: hover) {
-  .lang__item:hover {
-    color: var(--text);
-  }
-}
-
-.lang__item:active {
+.lang__item:hover {
   color: var(--text);
 }
 
