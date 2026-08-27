@@ -227,26 +227,8 @@ const describe = (player: PlayerView): string =>
   gap: 0.4rem;
 }
 
-.btn {
-  padding: 0.55rem 0.8rem;
-  font: inherit;
-  font-size: 0.84rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: var(--surface-hover);
-  border-color: var(--text-muted);
-}
-
-.btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
+/* `.btn` dan `.btn--primary` ada di assets/ui.css. Salinan yang dulu di sini
+   sudah menyimpang (padding 0.55rem, font 0.84rem, radius 0.5rem) sehingga
+   tombolnya sedikit lebih kecil daripada tombol di GameControls, padahal
+   keduanya duduk di panel yang sama. Sekarang keduanya seukuran. */
 </style>

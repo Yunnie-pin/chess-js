@@ -128,58 +128,8 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
   gap: 0.9rem;
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.field__label {
-  font-size: 0.72rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.segmented {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.22rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.55rem;
-}
-
-.segmented__item {
-  flex: 1;
-  padding: 0.42rem 0.5rem;
-  font-size: 0.82rem;
-  background: none;
-  border: none;
-  border-radius: 0.4rem;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.segmented__item:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.segmented__item:disabled {
-  cursor: not-allowed;
-}
-
-/* Yang sedang dipakai tetap terbaca penuh; hanya pilihan lain yang meredup. */
-.segmented__item:disabled:not(.segmented__item--on) {
-  opacity: 0.42;
-}
-
-.segmented__item--on {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
+/* `.field`, `.field__label`, `.segmented*`, dan `.btn*` ada di assets/ui.css —
+   dipakai bersama komponen lain, lihat catatannya di sana. */
 
 .note {
   margin: 0.1rem 0 0;
@@ -199,39 +149,5 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
 .buttons {
   display: grid;
   gap: 0.45rem;
-}
-
-.btn {
-  padding: 0.6rem 0.8rem;
-  font: inherit;
-  font-size: 0.86rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.55rem;
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.btn:hover:not(:disabled) {
-  background: var(--surface-hover);
-  border-color: var(--text-muted);
-}
-
-.btn:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
-
-.btn--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
 }
 </style>

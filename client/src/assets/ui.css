@@ -1,0 +1,141 @@
+/**
+ * Primitif antarmuka yang dipakai lebih dari satu komponen: tombol, pemilih
+ * bersegmen, pasangan label-isian, dan kotak galat.
+ *
+ * KENAPA GLOBAL, BUKAN `<style scoped>` DI TIAP KOMPONEN.
+ *
+ * Sebelum berkas ini ada, `.btn` ditulis ulang di tiga komponen dan ketiganya
+ * sudah menyimpang: GameControls dan OnlineLobby memakai padding 0.6rem /
+ * 0.86rem / radius 0.55rem, sementara RoomPanel 0.55rem / 0.84rem / 0.5rem —
+ * jadi tombol di panel room tampil sedikit lebih kecil daripada tombol yang
+ * seharusnya kembar, padahal keduanya duduk di panel yang sama. Tidak ada yang
+ * menyadarinya karena `scoped` membuat ketiganya tidak pernah bertemu.
+ * Perbedaan diam-diam seperti itu justru yang dicegah satu definisi bersama.
+ *
+ * Yang dipilih jadi acuan adalah versi terlengkap (punya `transition` dan
+ * penanganan `:disabled`), bukan yang paling kecil — menaikkan RoomPanel ke
+ * sana sekaligus memberinya keadaan nonaktif yang sebelumnya tidak ada.
+ *
+ * BATASNYA: hanya yang benar-benar identik di semua pemakainya yang boleh ke
+ * sini. `.player` sengaja TIDAK ikut walau namanya sama di RoomPanel dan
+ * App.vue — di sana ia baris daftar biasa, di sini baris ber-`space-between`
+ * dengan `min-height` yang menjaga papan tidak bergeser saat avatar
+ * muncul-hilang. Itu tabrakan nama, bukan duplikasi, dan menyatukannya akan
+ * merusak salah satunya. Hal yang sama berlaku untuk `.hint`.
+ *
+ * Palet tetap tinggal di `main.css`; berkas ini hanya memakainya.
+ */
+
+/* --- Tombol ---------------------------------------------------------------- */
+
+.btn {
+  padding: 0.6rem 0.8rem;
+  font: inherit;
+  font-size: 0.86rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--text-muted);
+}
+
+.btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* --- Pemilih bersegmen ----------------------------------------------------- */
+
+.segmented {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.22rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+}
+
+.segmented__item {
+  flex: 1;
+  padding: 0.42rem 0.5rem;
+  font-size: 0.82rem;
+  background: none;
+  border: none;
+  border-radius: 0.4rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.segmented__item:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.segmented__item:disabled {
+  cursor: not-allowed;
+}
+
+/* Yang sedang dipakai tetap terbaca penuh; hanya pilihan lain yang meredup. */
+.segmented__item:disabled:not(.segmented__item--on) {
+  opacity: 0.42;
+}
+
+.segmented__item--on {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+/* --- Label dan isian ------------------------------------------------------- */
+
+/*
+ * Satu kolom bertumpuk. Dulu ditulis `flex` + `flex-direction: column` di satu
+ * komponen dan `grid` di komponen lain; keduanya menghasilkan tata letak yang
+ * sama persis untuk isi seperti ini, jadi disatukan ke bentuk yang lebih pendek.
+ */
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* --- Kotak galat ----------------------------------------------------------- */
+
+.alert {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.82rem;
+  color: var(--danger-text);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  border-radius: 0.5rem;
+}
+
+.alert code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}

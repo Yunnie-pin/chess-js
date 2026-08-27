@@ -1112,15 +1112,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
 }
 
-.alert {
-  margin: 0;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.82rem;
-  color: var(--danger-text);
-  background: var(--danger-soft);
-  border: 1px solid var(--danger-line);
-  border-radius: 0.5rem;
-}
+/* `.alert` ada di assets/ui.css — dipakai juga oleh OnlineLobby. */
 
 /*
  * Selalu terlihat begitu ada premove diantre — bukan cuma sorotan di papan —

@@ -138,17 +138,8 @@ const submitJoin = () => {
   gap: 0.45rem;
 }
 
-.field {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.field__label {
-  font-size: 0.72rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
+/* `.field`, `.field__label`, `.segmented*`, `.btn*`, dan `.alert` ada di
+   assets/ui.css — dipakai bersama komponen lain, lihat catatannya di sana. */
 
 .input {
   padding: 0.55rem 0.7rem;
@@ -169,60 +160,6 @@ const submitJoin = () => {
   text-indent: 0.4em; /* mengimbangi letter-spacing pada karakter terakhir */
 }
 
-.segmented {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.22rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.55rem;
-}
-
-.segmented__item {
-  flex: 1;
-  padding: 0.42rem 0.5rem;
-  font-size: 0.82rem;
-  background: none;
-  border: none;
-  border-radius: 0.4rem;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.segmented__item--on {
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
-
-.btn {
-  padding: 0.6rem 0.8rem;
-  font: inherit;
-  font-size: 0.86rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.55rem;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.btn:hover:not(:disabled) {
-  background: var(--surface-hover);
-  border-color: var(--text-muted);
-}
-
-.btn:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-}
-
 .divider {
   display: flex;
   align-items: center;
@@ -241,21 +178,9 @@ const submitJoin = () => {
   background: var(--border);
 }
 
-.alert {
-  margin: 0;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.82rem;
-  color: var(--danger-text);
-  background: var(--danger-soft);
-  border: 1px solid var(--danger-line);
-  border-radius: 0.5rem;
-}
-
-.alert code {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-}
-
+/* Teks bantuan di lobi. Namanya kebetulan sama dengan `.hint` di ChessBoard —
+   di sana ia titik penanda petak tujuan. Dua arti berbeda, keduanya sengaja
+   dibiarkan ber-`scoped` masing-masing, jadi jangan angkat ke ui.css. */
 .hint {
   margin: 0;
   font-size: 0.82rem;
