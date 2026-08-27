@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 
 import ChessPiece from './ChessPiece.vue'
 import { FILES, colorOf, fileOf, isLightSquare, rankOf } from '@chess/shared/chess'
+import { arrowOutline, markRing } from './arrowGeometry.ts'
 import { useI18n } from '../i18n/index.ts'
 import type { Color, Move, Piece, Square } from '@chess/shared/types'
 
@@ -22,7 +23,6 @@ const ANNOTATION_COLORS: Record<AnnotationColor, string> = {
   blue: '#3a7bd5',
   yellow: '#e0a030'
 }
-const ANNOTATION_COLOR_KEYS = Object.keys(ANNOTATION_COLORS) as AnnotationColor[]
 
 function colorFromModifiers(event: { shiftKey: boolean; ctrlKey: boolean; altKey: boolean }): AnnotationColor {
   if (event.shiftKey) return 'red'
@@ -77,6 +77,25 @@ const rightDrag = ref<RightDragState | null>(null)
 /** Anotasi papan (panah dan tanda petak), digambar lewat klik kanan — murni lokal, tidak memengaruhi permainan. */
 const arrows = ref<{ from: Square; to: Square; color: AnnotationColor }[]>([])
 const marks = ref<Map<Square, AnnotationColor>>(new Map())
+
+/**
+ * Panah dan tanda petak sudah jadi bentuk siap-gambar untuk satu `<svg>` — lihat
+ * `arrowGeometry.ts`. Dihitung sekali per perubahan, bukan tiap render.
+ */
+const arrowShapes = computed(() =>
+  arrows.value.map((arrow) => ({
+    points: arrowOutline(arrow, props.orientation)
+      .map((point) => `${point.x},${point.y}`)
+      .join(' '),
+    color: ANNOTATION_COLORS[arrow.color]
+  }))
+)
+const markShapes = computed(() =>
+  [...marks.value].map(([square, color]) => ({
+    ...markRing(square, props.orientation),
+    color: ANNOTATION_COLORS[color]
+  }))
+)
 
 /** Urutan petak yang digambar: dari sudut pandang pemain yang sedang melihat. */
 const squares = computed<Square[]>(() => {
@@ -210,68 +229,6 @@ function clearAnnotations(): void {
 /** Dipanggil dari luar (App.vue) saat berpindah ke ply lain — anotasi digambar untuk posisi yang sekarang tampil, bukan untuk posisi manapun. */
 defineExpose({ clearAnnotations })
 
-/** Petak dalam baris/kolom layar (0-7), mengikuti orientasi papan. */
-function squareRowCol(square: Square): { row: number; col: number } {
-  const row = props.orientation === 'w' ? rankOf(square) : 7 - rankOf(square)
-  const col = props.orientation === 'w' ? fileOf(square) : 7 - fileOf(square)
-  return { row, col }
-}
-
-/** Titik tengah sebuah baris/kolom layar, dalam persen (0-100). */
-function centerOf(row: number, col: number): { x: number; y: number } {
-  return { x: (col + 0.5) * 12.5, y: (row + 0.5) * 12.5 }
-}
-
-/** Titik tengah petak dalam persen (0-100), mengikuti orientasi papan. */
-function squareCenter(square: Square): { x: number; y: number } {
-  const { row, col } = squareRowCol(square)
-  return centerOf(row, col)
-}
-
-/** Geser sebuah titik ke arah titik lain sejauh `amount` — dipakai supaya ujung panah tidak menusuk ke tengah bidak. */
-function shortenTowards(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  amount: number
-): { x: number; y: number } {
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  const len = Math.hypot(dx, dy) || 1
-  return { x: to.x - (dx / len) * amount, y: to.y - (dy / len) * amount }
-}
-
-/** Perpindahan berpola kuda (1,2) murni dari geometrinya — tidak peduli bidak apa yang sungguhan ada di sana. */
-function isKnightShape(from: Square, to: Square): boolean {
-  const dr = Math.abs(rankOf(to) - rankOf(from))
-  const df = Math.abs(fileOf(to) - fileOf(from))
-  return (dr === 1 && df === 2) || (dr === 2 && df === 1)
-}
-
-/**
- * Titik tekuk sebuah panah kuda: penuh dulu di sumbu yang bergerak 2 petak,
- * baru menyamping — persis lintasan kuda melompat, bukan garis lurus yang
- * gampang terbaca sebagai langkah gajah/menteri.
- */
-function knightBend(from: Square, to: Square): { x: number; y: number } {
-  const a = squareRowCol(from)
-  const b = squareRowCol(to)
-  const bendRow = Math.abs(b.row - a.row) === 2 ? b.row : a.row
-  const bendCol = Math.abs(b.col - a.col) === 2 ? b.col : a.col
-  return centerOf(bendRow, bendCol)
-}
-
-/** Titik-titik SVG untuk satu panah — dua titik untuk garis lurus, tiga (dengan tekukan) untuk langkah kuda. */
-function arrowPoints(arrow: { from: Square; to: Square }): string {
-  const start = squareCenter(arrow.from)
-  if (isKnightShape(arrow.from, arrow.to)) {
-    const bend = knightBend(arrow.from, arrow.to)
-    const tip = shortenTowards(bend, squareCenter(arrow.to), 4.5)
-    return `${start.x},${start.y} ${bend.x},${bend.y} ${tip.x},${tip.y}`
-  }
-  const tip = shortenTowards(start, squareCenter(arrow.to), 4.5)
-  return `${start.x},${start.y} ${tip.x},${tip.y}`
-}
-
 function onPointerMove(event: PointerEvent): void {
   const state = drag.value
   if (!state || event.pointerId !== state.pointerId) return
@@ -340,10 +297,8 @@ const dragStyle = computed(() => {
           'square--premove': isPremoveSquare(square),
           'square--premove-failed':
             square === props.premoveFailed?.from || square === props.premoveFailed?.to,
-          'square--marked': marks.has(square),
           'square--grabbable': canGrab(square)
         }"
-        :style="marks.has(square) ? { '--mark-color': ANNOTATION_COLORS[marks.get(square)!] } : undefined"
         role="gridcell"
         @pointerdown="onPointerDown(square, $event)"
       >
@@ -364,37 +319,34 @@ const dragStyle = computed(() => {
       </div>
 
       <!--
-        Ditaruh sesudah petak-petaknya (bukan sebelum) supaya tetap terlihat
-        di atas warna dasar petak yang OPAK — ditaruh sebelum sempat dicoba,
-        dan hasilnya panahnya lenyap total, tertutup background petak
+        Lapisan anotasi (panah + cincin tanda petak). Ditaruh sesudah
+        petak-petaknya supaya tetap terlihat di atas warna dasar petak yang
+        OPAK — ditaruh sebelum, dan hasilnya tertutup background petak
         berikutnya. Supaya tidak menimpa BIDAK juga, `.piece-icon` diberi
         z-index lebih tinggi daripada lapisan ini secara eksplisit — `.square`
         sendiri sengaja tidak diberi z-index, supaya bukan konteks stacking
         baru, dan z-index anaknya (`.piece-icon`) bisa langsung dibandingkan
-        dengan `.arrows-layer` yang sejajar dengannya di sini.
+        dengan `.annotation-layer` yang sejajar dengannya di sini.
       -->
-      <svg v-if="arrows.length" class="arrows-layer" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <marker
-            v-for="color in ANNOTATION_COLOR_KEYS"
-            :id="`arrowhead-${color}`"
-            :key="color"
-            markerWidth="3"
-            markerHeight="3"
-            refX="2.4"
-            refY="1.5"
-            orient="auto"
-            markerUnits="strokeWidth"
-          >
-            <path d="M0,0 L3,1.5 L0,3 Z" :fill="ANNOTATION_COLORS[color]" />
-          </marker>
-        </defs>
-        <polyline
-          v-for="(arrow, index) in arrows"
-          :key="index"
-          :points="arrowPoints(arrow)"
-          :stroke="ANNOTATION_COLORS[arrow.color]"
-          :marker-end="`url(#arrowhead-${arrow.color})`"
+      <svg
+        v-if="arrowShapes.length || markShapes.length"
+        class="annotation-layer"
+        viewBox="0 0 100 100"
+        aria-hidden="true"
+      >
+        <circle
+          v-for="mark in markShapes"
+          :key="`m${mark.cx}-${mark.cy}`"
+          :cx="mark.cx"
+          :cy="mark.cy"
+          :r="mark.r"
+          :stroke="mark.color"
+        />
+        <polygon
+          v-for="(shape, index) in arrowShapes"
+          :key="`a${index}`"
+          :points="shape.points"
+          :fill="shape.color"
         />
       </svg>
     </div>
@@ -460,8 +412,7 @@ const dragStyle = computed(() => {
 .square--selected::before,
 .square--check::before,
 .square--premove::before,
-.square--premove-failed::before,
-.square--marked::before {
+.square--premove-failed::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -502,21 +453,13 @@ const dragStyle = computed(() => {
   }
 }
 
-/* Tanda petak dari klik kanan — murni anotasi, tidak memengaruhi permainan.
-   Warnanya beda-beda per tanda (lihat --mark-color di style inline-nya),
-   bukan tetap seperti sorotan lain — makanya tidak bisa jadi satu variabel tema. */
-.square--marked::before {
-  background: var(--mark-color, var(--accent));
-  opacity: 0.35;
-}
-
 /*
  * z-index-nya harus DI ATAS petak (yang warna dasarnya opak, jadi kalau
- * lapisan ini di bawahnya panahnya lenyap total) tapi DI BAWAH bidak
+ * lapisan ini di bawahnya anotasinya lenyap total) tapi DI BAWAH bidak
  * (`.piece-icon`, lihat di bawah) — tiga tingkat, bukan dua, makanya tidak
  * cukup sekadar dipasang belakangan atau duluan di template.
  */
-.arrows-layer {
+.annotation-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -524,21 +467,28 @@ const dragStyle = computed(() => {
 }
 
 /*
- * Warna tiap panah diberikan lewat atribut stroke/fill langsung di elemennya
- * (lihat template) — bukan lewat variabel tema, karena tujuannya justru
- * membedakan beberapa ide di papan yang sama. Bayangan gelap tipis di
- * sekelilingnya (termasuk ke ujung panahnya, karena drop-shadow ikut
- * membayangi marker) supaya tetap terbaca di petak apa pun dan tema karakter
- * apa pun — tanpa itu, warna kuning terutama bisa tenggelam di petak terang
- * yang hangat seperti punya Mari.
+ * Warna tiap anotasi diberikan lewat fill/stroke langsung di elemennya (lihat
+ * template) — bukan lewat variabel tema, karena tujuannya justru membedakan
+ * beberapa ide di papan yang sama. Panah digambar sebagai satu bidang terisi
+ * (batang + kepala jadi satu `<polygon>`), dengan garis tepi gelap tipis lewat
+ * `paint-order: stroke` supaya tetap terbaca di petak dan tema apa pun —
+ * lebih tajam daripada drop-shadow blur, dan tidak menggelap ganda saat panah
+ * bersilangan.
  */
-.arrows-layer polyline {
-  fill: none;
-  stroke-width: 3.2;
-  stroke-linecap: round;
+.annotation-layer polygon {
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.45);
+  stroke-width: 0.6;
   stroke-linejoin: round;
-  opacity: 0.9;
-  filter: drop-shadow(0 0 1.4px rgba(0, 0, 0, 0.8));
+  opacity: 0.85;
+}
+
+/* Tanda petak: cincin, bukan kotak transparan seperti dulu — satu lapisan yang
+   sama dengan panah, jadi warnanya dan ketegasannya seragam. */
+.annotation-layer circle {
+  fill: none;
+  stroke-width: 0.9;
+  opacity: 0.85;
 }
 
 .hint {
@@ -586,10 +536,10 @@ const dragStyle = computed(() => {
   bottom: 2%;
 }
 
-/* Di atas .arrows-layer (z-index 5) supaya ujung panah yang mendarat di
+/* Di atas .annotation-layer (z-index 5) supaya ujung panah yang mendarat di
    petak berisi bidak tidak menutupinya. `.square` sendiri sengaja tidak
-   diberi z-index (lihat komentar di .arrows-layer), jadi ini langsung
-   dibandingkan dengan lapisan panah, bukan terjebak di dalam petaknya sendiri. */
+   diberi z-index (lihat komentar di .annotation-layer), jadi ini langsung
+   dibandingkan dengan lapisan anotasi, bukan terjebak di dalam petaknya sendiri. */
 .piece-icon {
   z-index: 6;
 }
