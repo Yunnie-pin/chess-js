@@ -21,7 +21,7 @@ import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
 import { resolveServerUrl } from './net/serverUrl.ts'
-import { premoveEnabled, showEvalBar, showHints, undoEnabled } from './settings.ts'
+import { premoveEnabled, showEvalBar, showHints, showSuggestion, undoEnabled } from './settings.ts'
 import { analysePosition, stopAnalysis, type Evaluation } from './engine/stockfishEngine.ts'
 import { Position, START_FEN, opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
@@ -136,15 +136,22 @@ const viewedPosition = computed<Position | null>(() => {
 })
 
 // ---------------------------------------------------------------------------
-// Bilah evaluasi — worker analisis Stockfish tersendiri menilai posisi yang
-// SEDANG tampil (termasuk saat menelusuri riwayat), hanya di mode lawan
-// komputer. Lepas dari kekuatan bot: yang lemah pun tetap dinilai sekuat
-// mungkin, jadi bilahnya jujur.
+// Analisis Stockfish (worker tersendiri) untuk bilah evaluasi DAN panah saran —
+// menilai posisi yang SEDANG tampil (termasuk saat menelusuri riwayat), hanya
+// di mode lawan komputer. Lepas dari kekuatan bot: yang lemah pun tetap dinilai
+// sekuat mungkin, jadi bilah dan sarannya jujur.
 // ---------------------------------------------------------------------------
 
+/** Worker analisis jalan bila salah satu dari bilah evaluasi / panah saran menyala. */
 const analysisActive = computed(
-  () => showEvalBar.value && !isOnline.value && offline.mode.value === 'lawan-komputer'
+  () =>
+    (showEvalBar.value || showSuggestion.value) &&
+    !isOnline.value &&
+    offline.mode.value === 'lawan-komputer'
 )
+
+/** Bilah evaluasi hanya tampil bila sakelarnya sendiri menyala — bukan cuma karena panah saran menyalakan analisernya. */
+const evalBarVisible = computed(() => analysisActive.value && showEvalBar.value)
 
 /** FEN posisi yang tampil di papan: yang sedang ditelusuri, atau posisi sekarang. */
 const analysedFen = computed(() => viewedPosition.value?.fen() ?? offline.fen.value)
@@ -215,6 +222,18 @@ const targets = computed<Map<Square, Move[]>>(() =>
 const canPlay = computed<Color | null>(() =>
   isLive.value ? (isOnline.value ? online.canPlay.value : offline.canPlay.value) : null
 )
+
+/**
+ * Panah saran: langkah terbaik menurut analiser, digambar hanya saat memang
+ * giliran manusia menggerakkan sesuatu di posisi sekarang. `canPlay` sudah
+ * merangkum semuanya — live, giliran manusia, bukan sedang mikir/usai/promosi —
+ * jadi tinggal ditambah sakelarnya dan mode lawan komputer.
+ */
+const suggestionArrow = computed<{ from: Square; to: Square } | null>(() => {
+  if (!showSuggestion.value || isOnline.value || offline.mode.value !== 'lawan-komputer') return null
+  if (canPlay.value === null) return null
+  return evaluation.value?.best ?? null
+})
 const premoveColor = computed<Color | null>(() =>
   isLive.value ? (isOnline.value ? online.premoveColor.value : offline.premoveColor.value) : null
 )
@@ -551,12 +570,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           v-model:premove-enabled="premoveEnabled"
           v-model:undo-enabled="undoEnabled"
           v-model:show-eval-bar="showEvalBar"
+          v-model:show-suggestion="showSuggestion"
         />
       </div>
     </header>
 
     <main class="layout">
-      <div class="board-column" :class="{ 'board-column--eval': analysisActive }">
+      <div class="board-column" :class="{ 'board-column--eval': evalBarVisible }">
         <div class="player">
           <div class="player__id">
             <OpponentFace v-if="topFace" :opponent="topFace" />
@@ -575,7 +595,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </div>
 
         <div class="board-stage">
-          <EvalBar v-if="analysisActive" :evaluation="evaluation" :orientation="orientation" />
+          <EvalBar v-if="evalBarVisible" :evaluation="evaluation" :orientation="orientation" />
 
           <div class="board-wrap">
             <ChessBoard
@@ -591,6 +611,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               :premove-queue="premoveQueue"
               :premove-failed="premoveFailed"
               :show-hints="showHints"
+              :suggestion="suggestionArrow"
               @activate="activateSquare"
               @drop="dropPiece"
               @right-click="cancelPremove"

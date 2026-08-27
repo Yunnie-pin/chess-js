@@ -124,6 +124,11 @@ export interface Evaluation {
   mate: number | null
   /** Kedalaman baris `info` terakhir. */
   depth: number
+  /**
+   * Langkah pertama dari principal variation — saran langkah terbaik untuk pihak
+   * yang jalan. `undefined` selama belum ada PV; sisanya `{ from, to }`.
+   */
+  best?: { from: Square; to: Square }
 }
 
 type EvaluationListener = (evaluation: Evaluation) => void
@@ -135,6 +140,8 @@ let analysisListener: EvaluationListener | null = null
 let searchingFen: string | null = null
 /** FEN terbaru yang diminta tapi belum dimulai — worker masih menghentikan pencarian sebelumnya. */
 let pendingFen: string | null = null
+/** Langkah pertama PV terbaru untuk pencarian yang sedang jalan — dipertahankan lintas baris `info` yang tak bawa `pv`. */
+let searchBest: { from: Square; to: Square } | undefined
 
 function getAnalyser(): Worker {
   if (!analyser) {
@@ -170,6 +177,7 @@ function sideToMove(fen: string): 'w' | 'b' {
 function startAnalysis(fen: string): void {
   const engine = getAnalyser()
   searchingFen = fen
+  searchBest = undefined
   engine.postMessage(`position fen ${fen}`)
   engine.postMessage(`go depth ${ANALYSIS_DEPTH}`)
 }
@@ -200,11 +208,20 @@ function onAnalyserLine(event: MessageEvent<string>): void {
   if (!cpMatch && !mateMatch) return
   const depthMatch = /\bdepth (\d+)/.exec(line)
 
+  // Token pertama sesudah `pv` = langkah terbaik. Tidak semua baris `info`
+  // membawanya (mis. `lowerbound`), jadi yang terakhir terlihat dipertahankan.
+  const pvMatch = /\bpv (\S+)/.exec(line)
+  if (pvMatch) {
+    const move = parseUciMove(pvMatch[1])
+    if (move) searchBest = { from: move.from, to: move.to }
+  }
+
   const flip = sideToMove(searchingFen) === 'b' ? -1 : 1
   analysisListener({
     cp: cpMatch ? Number(cpMatch[1]) * flip : null,
     mate: mateMatch ? Number(mateMatch[1]) * flip : null,
-    depth: depthMatch ? Number(depthMatch[1]) : 0
+    depth: depthMatch ? Number(depthMatch[1]) : 0,
+    best: searchBest
   })
 }
 

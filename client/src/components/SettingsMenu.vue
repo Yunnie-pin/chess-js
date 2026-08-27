@@ -15,6 +15,7 @@ const showHints = defineModel<boolean>('showHints', { required: true })
 const premoveEnabled = defineModel<boolean>('premoveEnabled', { required: true })
 const undoEnabled = defineModel<boolean>('undoEnabled', { required: true })
 const showEvalBar = defineModel<boolean>('showEvalBar', { required: true })
+const showSuggestion = defineModel<boolean>('showSuggestion', { required: true })
 
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
@@ -96,6 +97,10 @@ onBeforeUnmount(() => {
       <label class="switch">
         <input v-model="showEvalBar" type="checkbox" />
         <span>{{ t('controls.evalBar') }}</span>
+      </label>
+      <label class="switch">
+        <input v-model="showSuggestion" type="checkbox" />
+        <span>{{ t('controls.suggestionArrow') }}</span>
       </label>
     </div>
   </div>

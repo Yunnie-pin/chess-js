@@ -1,15 +1,15 @@
 /**
  * Sakelar bantuan bermain (petunjuk langkah, premove, batalkan langkah, bilah
- * evaluasi) — semuanya bertahan antar kunjungan lewat `localStorage`.
+ * evaluasi, panah saran) — semuanya bertahan antar kunjungan lewat `localStorage`.
  *
  * Sama seperti pilihan bahasa dan nama pemain, ini cuma kenyamanan: disimpan
  * lewat `storage.ts` yang tidak pernah melempar, dan kalau `localStorage` tidak
  * tersedia (mode privat, tes di Node) nilainya kembali ke bawaan tanpa ribut.
  *
  * Ref-nya di tingkat modul — satu aplikasi, satu salinan — persis pola yang
- * dipakai `i18n/index.ts` untuk bahasa. `App.vue` yang membagikannya: `showHints`
- * dan `showEvalBar` dibaca langsung, `premoveEnabled`/`undoEnabled` diteruskan
- * ke composable permainan supaya aturannya ditegakkan di model, bukan di tombol.
+ * dipakai `i18n/index.ts` untuk bahasa. `App.vue` yang membagikannya:
+ * `premoveEnabled`/`undoEnabled` diteruskan ke composable permainan supaya
+ * aturannya ditegakkan di model, bukan di tombol; sisanya dibaca langsung.
  */
 import { ref, watch } from 'vue'
 import type { Ref } from 'vue'
@@ -35,3 +35,4 @@ export const showHints = persistedFlag('petunjuk', true)
 export const premoveEnabled = persistedFlag('premove', true)
 export const undoEnabled = persistedFlag('undo', true)
 export const showEvalBar = persistedFlag('bilah-evaluasi', false)
+export const showSuggestion = persistedFlag('panah-saran', false)

@@ -15,10 +15,14 @@ const { t } = useI18n()
  * Alt). Warnanya tetap (bukan ikut tema karakter aktif) karena maksudnya
  * justru membedakan beberapa ide di papan yang sama, bukan menyatu dengan
  * palet papan.
+ *
+ * Hijau sengaja TIDAK ada di sini — itu dipakai khusus untuk panah saran mesin
+ * (lihat `.annotation-layer__suggestion`), jadi anotasi tangan tidak pernah
+ * tertukar dengannya. Klik kanan polos memberi oranye.
  */
-type AnnotationColor = 'green' | 'red' | 'blue' | 'yellow'
+type AnnotationColor = 'orange' | 'red' | 'blue' | 'yellow'
 const ANNOTATION_COLORS: Record<AnnotationColor, string> = {
-  green: '#3aa655',
+  orange: '#e07636',
   red: '#dd3344',
   blue: '#3a7bd5',
   yellow: '#e0a030'
@@ -28,7 +32,7 @@ function colorFromModifiers(event: { shiftKey: boolean; ctrlKey: boolean; altKey
   if (event.shiftKey) return 'red'
   if (event.ctrlKey) return 'blue'
   if (event.altKey) return 'yellow'
-  return 'green'
+  return 'orange'
 }
 
 const props = defineProps<{
@@ -47,6 +51,8 @@ const props = defineProps<{
   /** Langkah premove yang baru saja gagal, untuk kedipan merah sesaat. */
   premoveFailed: { from: Square; to: Square } | null
   showHints: boolean
+  /** Panah saran (langkah terbaik menurut mesin), atau null bila tidak ditampilkan. */
+  suggestion: { from: Square; to: Square } | null
 }>()
 
 const emit = defineEmits<{
@@ -95,6 +101,14 @@ const markShapes = computed(() =>
     ...markRing(square, props.orientation),
     color: ANNOTATION_COLORS[color]
   }))
+)
+/** Panah saran dari mesin — bukan anotasi pemain, jadi tidak bisa dihapus lewat klik kanan. */
+const suggestionShape = computed(() =>
+  props.suggestion
+    ? arrowOutline(props.suggestion, props.orientation)
+        .map((point) => `${point.x},${point.y}`)
+        .join(' ')
+    : null
 )
 
 /** Urutan petak yang digambar: dari sudut pandang pemain yang sedang melihat. */
@@ -329,11 +343,17 @@ const dragStyle = computed(() => {
         dengan `.annotation-layer` yang sejajar dengannya di sini.
       -->
       <svg
-        v-if="arrowShapes.length || markShapes.length"
+        v-if="arrowShapes.length || markShapes.length || suggestionShape"
         class="annotation-layer"
         viewBox="0 0 100 100"
         aria-hidden="true"
       >
+        <!-- Saran mesin digambar paling dulu = paling bawah, jadi anotasi pemain selalu menang. -->
+        <polygon
+          v-if="suggestionShape"
+          class="annotation-layer__suggestion"
+          :points="suggestionShape"
+        />
         <circle
           v-for="mark in markShapes"
           :key="`m${mark.cx}-${mark.cy}`"
@@ -489,6 +509,15 @@ const dragStyle = computed(() => {
   fill: none;
   stroke-width: 0.9;
   opacity: 0.85;
+}
+
+/* Panah saran mesin: hijau, dan sedikit lebih redup dari panah gambaran tangan
+   (yang tidak pernah hijau — lihat `ANNOTATION_COLORS`), jadi jelas terbaca
+   sebagai "petunjuk sistem". Selektor dua kelas supaya menang atas
+   `.annotation-layer polygon`. */
+.annotation-layer .annotation-layer__suggestion {
+  fill: #3aa655;
+  opacity: 0.72;
 }
 
 .hint {

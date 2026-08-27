@@ -68,6 +68,7 @@ export const en: Messages = {
   'controls.premove': 'Enable premove',
   'controls.undoEnabled': 'Enable undo',
   'controls.evalBar': 'Show evaluation bar',
+  'controls.suggestionArrow': 'Show suggestion arrow',
   'evalBar.ariaLabel': 'Evaluation: {score}',
   'premove.queued': 'Premove queued',
   'premove.cancel': 'Cancel',

@@ -20,13 +20,16 @@ const store = new Map<string, string>()
 store.set('catur.bilah-evaluasi', '1')
 store.set('catur.premove', '0')
 
-const { showHints, premoveEnabled, undoEnabled, showEvalBar } = await import('../src/settings.ts')
+const { showHints, premoveEnabled, undoEnabled, showEvalBar, showSuggestion } = await import(
+  '../src/settings.ts'
+)
 
 test('nilai awal dibaca dari localStorage, sisanya jatuh ke bawaan', () => {
   assert.equal(showEvalBar.value, true, 'tersimpan "1"')
   assert.equal(premoveEnabled.value, false, 'tersimpan "0"')
   assert.equal(undoEnabled.value, true, 'belum tersimpan → bawaan')
   assert.equal(showHints.value, true, 'belum tersimpan → bawaan')
+  assert.equal(showSuggestion.value, false, 'belum tersimpan → bawaan (mati)')
 })
 
 test('mengubah sakelar langsung menulis ke localStorage', () => {
