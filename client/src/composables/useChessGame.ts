@@ -29,6 +29,15 @@ import type {
 
 export type GameMode = 'dua-pemain' | 'lawan-komputer'
 
+/**
+ * Fase pertandingan:
+ * - `setup`   — papan awal tergambar tapi BEKU; lawan, warna, dan level bebas
+ *               diganti; tidak ada satu bidak pun yang bergerak.
+ * - `playing` — pertandingan berjalan; susunan terkunci.
+ * - `finished`— permainan usai (skakmat/remis); menunggu "Permainan baru".
+ */
+export type GamePhase = 'setup' | 'playing' | 'finished'
+
 export interface PendingPromotion {
   from: Square
   to: Square
@@ -112,12 +121,12 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   const lastSearch = ref<{ depth: number; nodes: number; timeMs: number } | null>(null)
 
   /**
-   * Papan sudah tampil dari awal (posisi awal langsung digambar), tapi belum
-   * bisa disentuh sampai pemain sendiri menekan "Permainan baru" — sekali
-   * saja. Sebelum itu, baik pemain maupun mesin sama-sama tidak boleh jalan;
-   * `reset()` yang menyalakannya, dan sesudah itu tetap menyala seterusnya.
+   * Fase pertandingan — lihat `GamePhase`. Mulai dari `setup`: papan awal sudah
+   * digambar tapi beku sampai "Mulai" ditekan. "Permainan baru" mengembalikannya
+   * ke `setup` lagi, jadi tiap pertandingan punya jendela penyiapan yang sama —
+   * bukan cuma yang pertama.
    */
-  const started = ref(false)
+  const phase = ref<GamePhase>('setup')
 
   // ------------------------------------------------------------------
   // Turunan dari posisi
@@ -223,39 +232,31 @@ export function useChessGame(options: UseChessGameOptions = {}) {
 
   /**
    * Susunan pertandingan — siapa lawannya, dan pemain memegang warna apa —
-   * tidak boleh diubah di tengah permainan yang sudah berjalan.
-   *
-   * Keduanya satu aturan karena keduanya merusak hal yang sama. Mengganti lawan
+   * tidak boleh diubah di tengah permainan yang sudah berjalan. Mengganti lawan
    * di langkah kesepuluh berarti separuh papan dimainkan orang lain; menukar
-   * warna berarti pemain tiba-tiba mewarisi posisi yang tadi dibangun melawan
-   * dirinya sendiri. Papannya tetap sah menurut aturan catur, tapi tidak lagi
-   * berarti apa-apa sebagai pertandingan.
+   * warna berarti pemain mewarisi posisi yang tadi dibangun melawan dirinya
+   * sendiri.
    *
-   * Patokannya langkah PEMAIN, bukan langkah pertama di papan. Kalau pemain
-   * memegang hitam, komputer yang jalan lebih dulu — mengunci di langkah
-   * pertama papan berarti lawan mustahil diganti sama sekali, karena
-   * "Permainan baru" pun langsung disusul langkah komputer dalam hitungan
-   * milidetik. Selama pemain belum menjalankan apa pun, belum ada yang
-   * dipertaruhkan, jadi tidak ada yang perlu dilindungi.
-   *
-   * Membatalkan langkah sampai habis membuka kuncinya lagi, dengan sendirinya.
+   * Terkunci begitu keluar dari fase `setup` — yaitu tepat saat "Mulai"
+   * ditekan. "Permainan baru" membawanya kembali ke `setup`, dan membatalkan
+   * langkah sampai papan kosong pun mengembalikannya ke sana.
    */
   const setupLocked = computed<boolean>(
-    () =>
-      mode.value === 'lawan-komputer' &&
-      history.value.some((entry) => entry.color === humanColor.value)
+    () => mode.value === 'lawan-komputer' && phase.value !== 'setup'
   )
 
   /** Manusia boleh menggerakkan warna ini sekarang. */
   const canPlay = computed<Color | null>(() => {
-    if (!started.value || status.value.over || thinking.value || pendingPromotion.value) return null
+    if (phase.value !== 'playing' || status.value.over || thinking.value || pendingPromotion.value) {
+      return null
+    }
     if (mode.value === 'dua-pemain') return turn.value
     return turn.value === humanColor.value ? turn.value : null
   })
 
   /** Warna yang boleh menyiapkan premove sekarang — giliran mesin, tapi manusia sudah tahu mau ke mana. */
   const premoveColor = computed<Color | null>(() => {
-    if (!started.value || !premoveEnabled.value) return null
+    if (phase.value !== 'playing' || !premoveEnabled.value) return null
     if (mode.value !== 'lawan-komputer' || status.value.over || humanColor.value === null) return null
     return turn.value !== humanColor.value ? humanColor.value : null
   })
@@ -318,6 +319,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     selected.value = null
     pendingPromotion.value = null
     bump()
+    if (position.status().over) phase.value = 'finished'
     scheduleAi()
     runQueuedPremove()
   }
@@ -505,20 +507,53 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     selected.value = null
     pendingPromotion.value = null
     bump()
+    // Membatalkan sampai papan kosong = seperti belum dimulai; kalau permainan
+    // tadi sudah usai lalu dibuka lagi lewat undo, kembali ke `playing`.
+    if (!history.value.length) phase.value = 'setup'
+    else if (phase.value === 'finished' && !position.status().over) phase.value = 'playing'
     scheduleAi()
   }
 
-  function reset(startFen?: string): void {
+  /** Muat posisi baru & bersihkan seluruh state turunannya. Tidak menyentuh `phase`. */
+  function loadPosition(fen: string): void {
     invalidateSearch()
     cancelPremove()
-    position.load(startFen ?? START_FEN)
+    position.load(fen)
     history.value = []
     lastMove.value = null
     selected.value = null
     pendingPromotion.value = null
     lastSearch.value = null
-    started.value = true
     bump()
+  }
+
+  /**
+   * "Permainan baru" — kembali ke fase PENYIAPAN. Papan awal langsung tergambar
+   * tapi beku: lawan dan warna bebas diganti, dan tidak ada bidak yang bergerak
+   * sampai `startGame()`.
+   */
+  function newGame(): void {
+    loadPosition(START_FEN)
+    phase.value = 'setup'
+  }
+
+  /**
+   * "Mulai" — dari penyiapan ke bermain. Mesin langsung mengambil giliran bila
+   * pemain memegang hitam; kalau putih, papan tinggal menunggu langkahnya.
+   */
+  function startGame(): void {
+    if (phase.value !== 'setup') return
+    phase.value = 'playing'
+    scheduleAi()
+  }
+
+  /**
+   * Muat sebuah posisi lalu LANGSUNG bermain darinya — dipakai tes untuk
+   * menyiapkan skenario. Alur produksi memakai `newGame()` + `startGame()`.
+   */
+  function reset(startFen?: string): void {
+    loadPosition(startFen ?? START_FEN)
+    phase.value = 'playing'
     scheduleAi()
   }
 
@@ -527,18 +562,18 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   }
 
   /**
-   * Ganti sisi yang dimainkan manusia; komputer langsung mengambil giliran.
+   * Ganti sisi yang dimainkan manusia. Hanya berpengaruh di fase `setup` —
+   * mesin belum jalan sampai "Mulai" ditekan, jadi memilih hitam di sini TIDAK
+   * lagi memicu langkah pertama komputer.
    *
-   * Menolak diam-diam bila pertandingan sudah berjalan. Tombolnya di UI memang
-   * sudah dinonaktifkan, tapi aturannya ditegakkan di sini juga: yang menjaga
-   * keutuhan permainan seharusnya modelnya, bukan tombolnya — sama seperti
-   * server yang tetap memvalidasi langkah walau klien sudah menyaringnya.
+   * Menolak diam-diam di luar `setup`. Tombolnya di UI memang sudah
+   * dinonaktifkan, tapi aturannya ditegakkan di model juga — sama seperti server
+   * yang tetap memvalidasi langkah walau klien sudah menyaringnya.
    */
   function playAs(color: Color): void {
     if (setupLocked.value) return
     aiColor.value = opponent(color)
     orientation.value = color
-    scheduleAi()
   }
 
   // ------------------------------------------------------------------
@@ -597,7 +632,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
    * lagi dipanggil dari sini sama sekali, bukan sekadar cadangan.
    */
   function scheduleAi(): void {
-    if (!started.value || mode.value !== 'lawan-komputer') return
+    if (phase.value !== 'playing' || mode.value !== 'lawan-komputer') return
     if (position.turn !== aiColor.value) return
     if (position.status().over || pendingPromotion.value) return
 
@@ -644,8 +679,6 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     if (premoveFailTimer !== null) clearTimeout(premoveFailTimer)
   })
 
-  scheduleAi()
-
   return {
     // state
     board,
@@ -664,7 +697,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     canPlay,
     humanColor,
     setupLocked,
-    started,
+    phase,
     pendingPromotion,
     premoveQueue,
     premoveFailed,
@@ -688,6 +721,8 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     cancelPremove,
     undo,
     reset,
+    newGame,
+    startGame,
     flipBoard,
     playAs,
     // util

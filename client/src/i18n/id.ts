@@ -34,7 +34,7 @@ export const id = {
   'piece.ariaLabel': '{piece} {color}',
 
   // Baris status
-  'status.notStarted': 'Tekan "Permainan baru" untuk mulai',
+  'status.notStarted': 'Atur lawan dan warna, lalu tekan "Mulai"',
   'status.noRoom': 'Belum berada di room mana pun',
   'status.waitingOpponent': 'Menunggu lawan bergabung…',
   'status.resigned': '{loser} menyerah — {winner} menang',
@@ -89,6 +89,7 @@ export const id = {
   'premove.queued': 'Premove menunggu giliran',
   'premove.cancel': 'Batalkan',
   'controls.newGame': 'Permainan baru',
+  'controls.startGame': 'Mulai',
   'controls.undo': 'Batalkan langkah',
 
   /*

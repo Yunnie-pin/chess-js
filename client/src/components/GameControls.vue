@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import type { EloRating } from '@chess/shared/ai'
 import { useI18n } from '../i18n/index.ts'
 import OpponentPicker from './OpponentPicker.vue'
-import type { GameMode } from '../composables/useChessGame.ts'
+import type { GameMode, GamePhase } from '../composables/useChessGame.ts'
 import type { Color } from '@chess/shared/types'
 
 const { t } = useI18n()
@@ -12,22 +12,31 @@ const { t } = useI18n()
 const mode = defineModel<GameMode>('mode', { required: true })
 const elo = defineModel<EloRating>('elo', { required: true })
 
-defineProps<{
+const props = defineProps<{
   humanColor: Color | null
   canUndo: boolean
   busy: boolean
   /** Pertandingan sudah berjalan, jadi lawannya tidak boleh diganti lagi. */
   setupLocked: boolean
+  phase: GamePhase
   /** Cuma dibaca di sini (tombol Undo dinonaktifkan bila mati) — sakelarnya sendiri ada di SettingsMenu. */
   undoEnabled: boolean
 }>()
 
 const emit = defineEmits<{
   reset: []
+  start: []
   undo: []
   flip: []
   playAs: [color: Color]
 }>()
+
+/** Di fase penyiapan tombol utamanya "Mulai"; selebihnya "Permainan baru". */
+const inSetup = computed(() => props.phase === 'setup')
+const onPrimary = (): void => {
+  if (inSetup.value) emit('start')
+  else emit('reset')
+}
 
 /*
  * Nilai mode tetap 'lawan-komputer'/'dua-pemain' — itu tipe internal, bukan
@@ -101,8 +110,8 @@ const MODES = computed<{ value: GameMode; label: string }[]>(() => [
     </template>
 
     <div class="buttons">
-      <button type="button" class="btn btn--primary" @click="emit('reset')">
-        {{ t('controls.newGame') }}
+      <button type="button" class="btn btn--primary" @click="onPrimary">
+        {{ inSetup ? t('controls.startGame') : t('controls.newGame') }}
       </button>
       <button type="button" class="btn" :disabled="!canUndo || busy || !undoEnabled" @click="emit('undo')">
         {{ t('controls.undo') }}

@@ -393,7 +393,7 @@ const statusText = computed(() => {
     return mine ? t('status.yourTurn') : t('status.waitingMove')
   }
 
-  if (!offline.started.value) return t('status.notStarted')
+  if (offline.phase.value === 'setup') return t('status.notStarted')
 
   const state = offline.status.value
   if (state.over) {
@@ -415,7 +415,7 @@ const statusTone = computed(() => {
     if (state?.over) return state.reason === 'checkmate' ? 'win' : 'draw'
     return state?.check ? 'check' : 'normal'
   }
-  if (!offline.started.value) return 'draw'
+  if (offline.phase.value === 'setup') return 'draw'
 
   const state = offline.status.value
   if (state.over) return state.reason === 'checkmate' ? 'win' : 'draw'
@@ -494,7 +494,12 @@ const flipBoard = () => {
 // penelusuran ke posisi sekarang — lihat catatan pada `viewPly` — dan
 // membuang anotasi lama, yang digambar untuk papan yang sekarang sudah lain.
 const resetGame = () => {
-  offline.reset()
+  offline.newGame()
+  viewPly.value = null
+  clearBoardAnnotations()
+}
+const startGame = () => {
+  offline.startGame()
   viewPly.value = null
   clearBoardAnnotations()
 }
@@ -513,12 +518,22 @@ const rematch = () => {
  * Tombol di dalam lapisan redup sendiri: online cuma masuk akal begitu
  * pertandingan benar-benar usai (canRematch) — bukan selagi masih menunggu
  * lawan bergabung, walau lapisan redupnya sama-sama tampil di kedua kondisi.
- * Offline selalu boleh, karena "Permainan baru" adalah aksi yang sama baik
- * untuk memulai maupun mengulang.
+ * Offline selalu boleh: di fase penyiapan tombolnya "Mulai", selebihnya
+ * "Permainan baru".
  */
 const overlayActionVisible = computed(() => (isOnline.value ? canRematch.value : true))
-const overlayActionLabel = computed(() => (isOnline.value ? t('room.rematch') : t('controls.newGame')))
-const overlayAction = () => (isOnline.value ? rematch() : resetGame())
+const offlineSetup = computed(() => !isOnline.value && offline.phase.value === 'setup')
+const overlayActionLabel = computed(() =>
+  isOnline.value
+    ? t('room.rematch')
+    : offlineSetup.value
+      ? t('controls.startGame')
+      : t('controls.newGame')
+)
+const overlayAction = () => {
+  if (isOnline.value) return rematch()
+  return offlineSetup.value ? startGame() : resetGame()
+}
 
 function onKeydown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
@@ -733,8 +748,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :can-undo="offline.history.value.length > 0"
           :busy="offline.thinking.value"
           :setup-locked="offline.setupLocked.value"
+          :phase="offline.phase.value"
           :undo-enabled="undoEnabled"
           @reset="resetGame"
+          @start="startGame"
           @undo="undoMove"
           @flip="flipBoard"
           @play-as="offline.playAs"

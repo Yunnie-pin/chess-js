@@ -24,7 +24,7 @@ export const en: Messages = {
   'piece.p': 'Pawn',
   'piece.ariaLabel': '{color} {piece}',
 
-  'status.notStarted': 'Press "New game" to start',
+  'status.notStarted': 'Set your opponent and colour, then press "Start"',
   'status.noRoom': 'Not in a room yet',
   'status.waitingOpponent': 'Waiting for an opponent to join…',
   'status.resigned': '{loser} resigned — {winner} wins',
@@ -73,6 +73,7 @@ export const en: Messages = {
   'premove.queued': 'Premove queued',
   'premove.cancel': 'Cancel',
   'controls.newGame': 'New game',
+  'controls.startGame': 'Start',
   'controls.undo': 'Undo move',
 
   'level.1320': 'Beginner',

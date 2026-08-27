@@ -41,7 +41,7 @@ function withGame(run: (game: Game) => void | Promise<void>): Promise<void> {
   scope.run(() => {
     const game = useChessGame({ findBestMove: stubFindBestMove })
     game.mode.value = 'dua-pemain' // matikan komputer kecuali tes memintanya
-    game.started.value = true
+    game.phase.value = 'playing'
     result = run(game)
   })
   return Promise.resolve(result).finally(() => scope.stop())
@@ -178,7 +178,7 @@ test('skak dan skakmat tercermin di status', () =>
 test('permainan baru mengosongkan riwayat dan posisi', () =>
   withGame((game) => {
     click(game, 'e2', 'e4')
-    game.reset()
+    game.newGame()
 
     assert.equal(game.history.value.length, 0)
     assert.equal(game.lastMove.value, null)
@@ -272,40 +272,40 @@ test('undo pada mode lawan komputer membatalkan sepasang langkah', () =>
     assert.equal(game.thinking.value, false)
   }))
 
-test('lawan terkunci begitu pemain menjalankan langkah pertamanya', () =>
-  withGame(async (game) => {
+test('lawan terkunci begitu permainan dimulai', () =>
+  withFreshGame(async (game) => {
     game.mode.value = 'lawan-komputer'
     game.elo.value = 1320
-    game.playAs('w')
-    await nextTick()
 
-    assert.equal(game.setupLocked.value, false, 'papan masih kosong, lawan bebas diganti')
+    assert.equal(game.setupLocked.value, false, 'penyiapan — lawan bebas diganti')
+
+    game.startGame()
+    assert.equal(game.setupLocked.value, true, 'permainan dimulai, lawan terkunci')
 
     click(game, 'e2', 'e4')
-    assert.equal(game.setupLocked.value, true, 'pemain sudah jalan, lawan terkunci')
-
     await waitForReply(game)
     assert.equal(game.setupLocked.value, true, 'tetap terkunci setelah komputer menjawab')
   }))
 
-test('lawan masih bebas diganti walau komputer sudah jalan lebih dulu', () =>
-  withGame(async (game) => {
-    // Kasus inilah yang menentukan bentuk aturannya. Pemain memegang hitam, jadi
-    // papan sudah punya satu langkah sebelum ia sempat menyentuh apa pun. Kalau
-    // kuncinya dipasang pada langkah pertama PAPAN, lawan tidak akan pernah bisa
-    // diganti: "Permainan baru" pun langsung disusul langkah komputer.
+test('memilih hitam di penyiapan tidak memicu langkah komputer; "Mulai" yang memicunya', () =>
+  withFreshGame(async (game) => {
+    // Kasus inilah yang menentukan bentuk aturannya: memilih hitam TIDAK boleh
+    // langsung menyuruh komputer membuka permainan sebelum pemain menekan
+    // "Mulai" — dulu bisa, dan itu terasa seperti papan bergerak sendiri.
     game.mode.value = 'lawan-komputer'
     game.elo.value = 1320
     game.playAs('b')
     await nextTick()
+    await sleep(200)
+
+    assert.equal(game.thinking.value, false, 'belum dimulai — komputer diam')
+    assert.equal(game.history.value.length, 0)
+
+    game.startGame()
     await waitForReply(game)
-
-    assert.equal(game.history.value.length, 1, 'komputer sudah membuka permainan')
+    assert.equal(game.history.value.length, 1, 'komputer membuka permainan sebagai putih')
     assert.equal(game.history.value[0].color, 'w')
-    assert.equal(game.setupLocked.value, false, 'pemain belum jalan, jadi belum terkunci')
-
-    click(game, 'e7', 'e5')
-    assert.equal(game.setupLocked.value, true)
+    assert.equal(game.setupLocked.value, true, 'terkunci begitu bermain')
   }))
 
 test('membatalkan langkah sampai habis membuka kunci lawan lagi', () =>
@@ -324,18 +324,16 @@ test('membatalkan langkah sampai habis membuka kunci lawan lagi', () =>
     assert.equal(game.setupLocked.value, false, 'tidak ada langkah pemain tersisa')
   }))
 
-test('permainan baru membuka kunci lawan', () =>
-  withGame(async (game) => {
+test('penyiapan terkunci begitu "Mulai", "Permainan baru" membukanya lagi', () =>
+  withFreshGame((game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 1320
-    game.playAs('w')
-    await nextTick()
+    assert.equal(game.setupLocked.value, false, 'bebas diatur di fase penyiapan')
 
-    click(game, 'e2', 'e4')
-    assert.equal(game.setupLocked.value, true)
+    game.startGame()
+    assert.equal(game.setupLocked.value, true, 'terkunci begitu bermain')
 
-    game.reset()
-    assert.equal(game.setupLocked.value, false)
+    game.newGame()
+    assert.equal(game.setupLocked.value, false, 'kembali ke penyiapan')
   }))
 
 test('mode dua pemain tidak punya lawan untuk dikunci', () =>
@@ -346,53 +344,32 @@ test('mode dua pemain tidak punya lawan untuk dikunci', () =>
     assert.equal(game.setupLocked.value, false)
   }))
 
-test('warna tidak bisa ditukar setelah pertandingan berjalan', () =>
-  withGame(async (game) => {
+test('warna bebas dipilih di penyiapan, terkunci begitu bermain', () =>
+  withFreshGame((game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 1320
-    game.playAs('w')
-    await nextTick()
-    assert.equal(game.humanColor.value, 'w')
-
-    click(game, 'e2', 'e4')
-    await waitForReply(game)
-    assert.equal(game.setupLocked.value, true)
-
-    const before = game.history.value.length
-    game.playAs('b')
-
-    // Ditolak di composable, bukan cuma di tombol: papannya tidak boleh
-    // berpindah tangan di tengah jalan.
-    assert.equal(game.humanColor.value, 'w', 'pemain tetap memegang putih')
-    assert.equal(game.history.value.length, before, 'tidak ada langkah tambahan')
-  }))
-
-test('warna masih bisa dipilih sebelum pemain jalan', () =>
-  withGame(async (game) => {
-    game.mode.value = 'lawan-komputer'
-    game.elo.value = 1320
-    game.playAs('w')
-    await nextTick()
 
     game.playAs('b')
-    assert.equal(game.humanColor.value, 'b', 'papan masih kosong, warna bebas dipilih')
+    assert.equal(game.humanColor.value, 'b')
+    game.playAs('w')
+    assert.equal(game.humanColor.value, 'w', 'di penyiapan warna bebas bolak-balik')
+
+    game.startGame()
+    game.playAs('b')
+    // Ditolak di composable, bukan cuma di tombol: papan tidak berpindah tangan
+    // di tengah jalan.
+    assert.equal(game.humanColor.value, 'w', 'terkunci setelah "Mulai"')
   }))
 
 test('permainan baru mengembalikan kebebasan memilih warna', () =>
-  withGame(async (game) => {
+  withFreshGame((game) => {
     game.mode.value = 'lawan-komputer'
-    game.elo.value = 1320
-    game.playAs('w')
-    await nextTick()
-
-    click(game, 'e2', 'e4')
-    await waitForReply(game)
+    game.startGame()
     game.playAs('b')
     assert.equal(game.humanColor.value, 'w', 'masih terkunci')
 
-    game.reset()
+    game.newGame()
     game.playAs('b')
-    assert.equal(game.humanColor.value, 'b')
+    assert.equal(game.humanColor.value, 'b', 'penyiapan lagi — bebas')
   }))
 
 // ---------------------------------------------------------------------------
@@ -577,11 +554,12 @@ test('mematikan sakelar undo membuat undo() tidak melakukan apa-apa', () =>
   }))
 
 // ---------------------------------------------------------------------------
-// Belum dimulai
+// Fase penyiapan
 // ---------------------------------------------------------------------------
 
-test('papan belum bisa disentuh sebelum "Permainan baru" ditekan', () =>
+test('papan belum bisa disentuh sebelum "Mulai" ditekan', () =>
   withFreshGame((game) => {
+    assert.equal(game.phase.value, 'setup')
     assert.equal(game.canPlay.value, null, 'terkunci walau posisi awal sudah tergambar')
 
     click(game, 'e2', 'e4')
@@ -589,9 +567,9 @@ test('papan belum bisa disentuh sebelum "Permainan baru" ditekan', () =>
     assert.equal(game.selected.value, null, 'bidak juga tidak boleh sekadar terpilih')
   }))
 
-test('mesin tidak jalan lebih dulu sebelum "Permainan baru", walau pemain sudah memilih hitam', () =>
+test('mesin tidak jalan lebih dulu sebelum "Mulai", walau pemain sudah memilih hitam', () =>
   withFreshGame(async (game) => {
-    game.playAs('b') // mesin (putih) seharusnya jalan lebih dulu begitu dimulai
+    game.playAs('b') // mesin (putih) baru jalan begitu startGame() dipanggil
     await nextTick()
     await sleep(300)
 
@@ -599,11 +577,12 @@ test('mesin tidak jalan lebih dulu sebelum "Permainan baru", walau pemain sudah 
     assert.equal(game.history.value.length, 0)
   }))
 
-test('"Permainan baru" membuka papan untuk mulai dimainkan', () =>
+test('"Mulai" membuka papan untuk dimainkan', () =>
   withFreshGame((game) => {
     assert.equal(game.canPlay.value, null)
 
-    game.reset()
+    game.startGame()
+    assert.equal(game.phase.value, 'playing')
     assert.equal(game.canPlay.value, 'w', 'putih boleh jalan begitu permainan dimulai')
 
     click(game, 'e2', 'e4')
