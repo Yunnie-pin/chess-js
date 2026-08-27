@@ -6,6 +6,9 @@
 
 import type { Evaluation } from './stockfishEngine.ts'
 
+/** Cuma bagian skor dari `Evaluation` — fungsi di sini tak peduli `fen`/`depth`/`best`. */
+type Score = Pick<Evaluation, 'cp' | 'mate'>
+
 /**
  * Bagian bilah milik Putih, 0..1.
  *
@@ -14,7 +17,7 @@ import type { Evaluation } from './stockfishEngine.ts'
  * melambat di ujung. Dijepit ke [0.02, 0.98] supaya sisi yang kalah tetap
  * tersisa setipis garis — kecuali memang sudah mat paksa, yang langsung penuh.
  */
-export function whiteShare(evaluation: Evaluation | null): number {
+export function whiteShare(evaluation: Score | null): number {
   if (!evaluation) return 0.5
   if (evaluation.mate !== null) return evaluation.mate > 0 ? 1 : 0
   if (evaluation.cp === null) return 0.5
@@ -23,7 +26,7 @@ export function whiteShare(evaluation: Evaluation | null): number {
 }
 
 /** Teks di ujung bilah: "+1.2", "-0.4", "0.0", "M3", atau "…" bila belum ada kabar. */
-export function formatEval(evaluation: Evaluation | null): string {
+export function formatEval(evaluation: Score | null): string {
   if (!evaluation || (evaluation.cp === null && evaluation.mate === null)) return '…'
   if (evaluation.mate !== null) return `M${Math.abs(evaluation.mate)}`
   const pawns = (evaluation.cp ?? 0) / 100

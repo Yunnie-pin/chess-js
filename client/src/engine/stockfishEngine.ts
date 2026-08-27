@@ -117,18 +117,23 @@ export function terminateStockfish(): void {
 /** Kedalaman analisis bilah evaluasi — tetap, lepas dari level bot yang dipilih. */
 const ANALYSIS_DEPTH = 16
 
+/** Berapa lini teratas yang diminta (MultiPV) — dipakai untuk panah saran berlapis. */
+const MULTI_PV = 3
+
 export interface Evaluation {
-  /** Centipawn dari sudut pandang PUTIH; null selama belum ada kabar dari mesin. */
+  /** FEN posisi yang dinilai — supaya pemakainya bisa membuang hasil yang sudah basi. */
+  fen: string
+  /** Centipawn dari sudut pandang PUTIH (lini TERBAIK saja); null selama belum ada kabar. */
   cp: number | null
-  /** Mat dalam N langkah dari sudut Putih (positif = Putih memberi mat); null bila bukan mat paksa. */
+  /** Mat dalam N langkah dari sudut Putih (lini terbaik; positif = Putih memberi mat); null bila bukan mat paksa. */
   mate: number | null
-  /** Kedalaman baris `info` terakhir. */
+  /** Kedalaman baris `info` terakhir dari lini terbaik. */
   depth: number
   /**
-   * Langkah pertama dari principal variation — saran langkah terbaik untuk pihak
-   * yang jalan. `undefined` selama belum ada PV; sisanya `{ from, to }`.
+   * Langkah pertama tiap lini teratas, terurut dari terbaik — untuk panah saran
+   * berlapis. Kosong selama belum ada PV; panjangnya ≤ `MULTI_PV`.
    */
-  best?: { from: Square; to: Square }
+  moves: { from: Square; to: Square }[]
 }
 
 type EvaluationListener = (evaluation: Evaluation) => void
@@ -140,8 +145,14 @@ let analysisListener: EvaluationListener | null = null
 let searchingFen: string | null = null
 /** FEN terbaru yang diminta tapi belum dimulai — worker masih menghentikan pencarian sebelumnya. */
 let pendingFen: string | null = null
-/** Langkah pertama PV terbaru untuk pencarian yang sedang jalan — dipertahankan lintas baris `info` yang tak bawa `pv`. */
-let searchBest: { from: Square; to: Square } | undefined
+
+// Ringkasan pencarian yang sedang jalan, dipertahankan lintas baris `info` yang
+// tak lengkap. Direset di `startAnalysis`.
+/** Langkah pertama tiap lini, indeks 0 = lini terbaik (multipv 1). */
+let searchMoves: ({ from: Square; to: Square } | undefined)[] = []
+let searchCp: number | null = null
+let searchMate: number | null = null
+let searchDepth = 0
 
 function getAnalyser(): Worker {
   if (!analyser) {
@@ -151,14 +162,16 @@ function getAnalyser(): Worker {
   return analyser
 }
 
-/** Handshake UCI tersendiri untuk worker analisis — sekali saja. */
+/** Handshake UCI tersendiri untuk worker analisis — sekali saja, sekalian pasang MultiPV. */
 function analyserWhenReady(): Promise<void> {
   if (analyserReady) return analyserReady
   const engine = getAnalyser()
   analyserReady = new Promise((resolve) => {
     const onLine = (event: MessageEvent<string>): void => {
-      if (event.data === 'uciok') engine.postMessage('isready')
-      else if (event.data === 'readyok') {
+      if (event.data === 'uciok') {
+        engine.postMessage(`setoption name MultiPV value ${MULTI_PV}`)
+        engine.postMessage('isready')
+      } else if (event.data === 'readyok') {
         engine.removeEventListener('message', onLine)
         resolve()
       }
@@ -177,7 +190,10 @@ function sideToMove(fen: string): 'w' | 'b' {
 function startAnalysis(fen: string): void {
   const engine = getAnalyser()
   searchingFen = fen
-  searchBest = undefined
+  searchMoves = []
+  searchCp = null
+  searchMate = null
+  searchDepth = 0
   engine.postMessage(`position fen ${fen}`)
   engine.postMessage(`go depth ${ANALYSIS_DEPTH}`)
 }
@@ -206,22 +222,34 @@ function onAnalyserLine(event: MessageEvent<string>): void {
   const cpMatch = /\bscore cp (-?\d+)/.exec(line)
   const mateMatch = /\bscore mate (-?\d+)/.exec(line)
   if (!cpMatch && !mateMatch) return
-  const depthMatch = /\bdepth (\d+)/.exec(line)
 
-  // Token pertama sesudah `pv` = langkah terbaik. Tidak semua baris `info`
-  // membawanya (mis. `lowerbound`), jadi yang terakhir terlihat dipertahankan.
+  // `multipv 1` = lini terbaik, `2`/`3` = alternatif. Tanpa token ini anggap lini 1.
+  const rank = Number(/\bmultipv (\d+)/.exec(line)?.[1] ?? 1)
+  const flip = sideToMove(searchingFen) === 'b' ? -1 : 1
+
+  // Skor + kedalaman untuk bilah evaluasi hanya dari lini terbaik.
+  if (rank === 1) {
+    searchCp = cpMatch ? Number(cpMatch[1]) * flip : null
+    searchMate = mateMatch ? Number(mateMatch[1]) * flip : null
+    const depthMatch = /\bdepth (\d+)/.exec(line)
+    if (depthMatch) searchDepth = Number(depthMatch[1])
+  }
+
+  // Token pertama sesudah `pv` = langkah pertama lini itu. Tidak semua baris
+  // `info` membawanya (mis. `lowerbound`), jadi yang terakhir dipertahankan.
   const pvMatch = /\bpv (\S+)/.exec(line)
   if (pvMatch) {
     const move = parseUciMove(pvMatch[1])
-    if (move) searchBest = { from: move.from, to: move.to }
+    if (move) searchMoves[rank - 1] = { from: move.from, to: move.to }
   }
 
-  const flip = sideToMove(searchingFen) === 'b' ? -1 : 1
   analysisListener({
-    cp: cpMatch ? Number(cpMatch[1]) * flip : null,
-    mate: mateMatch ? Number(mateMatch[1]) * flip : null,
-    depth: depthMatch ? Number(depthMatch[1]) : 0,
-    best: searchBest
+    fen: searchingFen,
+    cp: searchCp,
+    mate: searchMate,
+    depth: searchDepth,
+    // Padatkan: buang celah kalau lini 2 sempat datang sebelum lini 1.
+    moves: searchMoves.filter((move): move is { from: Square; to: Square } => move !== undefined)
   })
 }
 

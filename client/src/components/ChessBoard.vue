@@ -51,8 +51,8 @@ const props = defineProps<{
   /** Langkah premove yang baru saja gagal, untuk kedipan merah sesaat. */
   premoveFailed: { from: Square; to: Square } | null
   showHints: boolean
-  /** Panah saran (langkah terbaik menurut mesin), atau null bila tidak ditampilkan. */
-  suggestion: { from: Square; to: Square } | null
+  /** Panah saran mesin, terurut dari terbaik (MultiPV). Kosong bila tidak ditampilkan. */
+  suggestions: { from: Square; to: Square }[]
 }>()
 
 const emit = defineEmits<{
@@ -102,13 +102,22 @@ const markShapes = computed(() =>
     color: ANNOTATION_COLORS[color]
   }))
 )
-/** Panah saran dari mesin — bukan anotasi pemain, jadi tidak bisa dihapus lewat klik kanan. */
-const suggestionShape = computed(() =>
-  props.suggestion
-    ? arrowOutline(props.suggestion, props.orientation)
+/**
+ * Panah saran mesin (bukan anotasi pemain — tak bisa dihapus lewat klik kanan).
+ * Yang pertama (langkah terbaik) paling tegas, sisanya makin redup. Diurutkan
+ * mundur di sini supaya yang terbaik digambar TERAKHIR = paling atas saat menumpuk.
+ */
+const SUGGESTION_OPACITY = [0.72, 0.46, 0.3]
+const suggestionShapes = computed(() =>
+  props.suggestions
+    .map((move, rank) => ({
+      rank,
+      opacity: SUGGESTION_OPACITY[rank] ?? 0.3,
+      points: arrowOutline(move, props.orientation)
         .map((point) => `${point.x},${point.y}`)
         .join(' ')
-    : null
+    }))
+    .reverse()
 )
 
 /** Urutan petak yang digambar: dari sudut pandang pemain yang sedang melihat. */
@@ -343,16 +352,18 @@ const dragStyle = computed(() => {
         dengan `.annotation-layer` yang sejajar dengannya di sini.
       -->
       <svg
-        v-if="arrowShapes.length || markShapes.length || suggestionShape"
+        v-if="arrowShapes.length || markShapes.length || suggestionShapes.length"
         class="annotation-layer"
         viewBox="0 0 100 100"
         aria-hidden="true"
       >
         <!-- Saran mesin digambar paling dulu = paling bawah, jadi anotasi pemain selalu menang. -->
         <polygon
-          v-if="suggestionShape"
+          v-for="shape in suggestionShapes"
+          :key="`s${shape.rank}`"
           class="annotation-layer__suggestion"
-          :points="suggestionShape"
+          :points="shape.points"
+          :style="{ opacity: shape.opacity }"
         />
         <circle
           v-for="mark in markShapes"
@@ -511,13 +522,11 @@ const dragStyle = computed(() => {
   opacity: 0.85;
 }
 
-/* Panah saran mesin: hijau, dan sedikit lebih redup dari panah gambaran tangan
-   (yang tidak pernah hijau — lihat `ANNOTATION_COLORS`), jadi jelas terbaca
-   sebagai "petunjuk sistem". Selektor dua kelas supaya menang atas
-   `.annotation-layer polygon`. */
+/* Panah saran mesin: hijau (panah gambaran tangan tidak pernah hijau — lihat
+   `ANNOTATION_COLORS`), jadi jelas terbaca sebagai "petunjuk sistem". Opacity
+   diatur per panah lewat style inline (lini terbaik paling tegas). */
 .annotation-layer .annotation-layer__suggestion {
   fill: #3aa655;
-  opacity: 0.72;
 }
 
 .hint {

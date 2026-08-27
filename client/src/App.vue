@@ -135,43 +135,6 @@ const viewedPosition = computed<Position | null>(() => {
   return new Position(entry ? entry.fen : START_FEN)
 })
 
-// ---------------------------------------------------------------------------
-// Analisis Stockfish (worker tersendiri) untuk bilah evaluasi DAN panah saran —
-// menilai posisi yang SEDANG tampil (termasuk saat menelusuri riwayat), hanya
-// di mode lawan komputer. Lepas dari kekuatan bot: yang lemah pun tetap dinilai
-// sekuat mungkin, jadi bilah dan sarannya jujur.
-// ---------------------------------------------------------------------------
-
-/** Worker analisis jalan bila salah satu dari bilah evaluasi / panah saran menyala. */
-const analysisActive = computed(
-  () =>
-    (showEvalBar.value || showSuggestion.value) &&
-    !isOnline.value &&
-    offline.mode.value === 'lawan-komputer'
-)
-
-/** Bilah evaluasi hanya tampil bila sakelarnya sendiri menyala — bukan cuma karena panah saran menyalakan analisernya. */
-const evalBarVisible = computed(() => analysisActive.value && showEvalBar.value)
-
-/** FEN posisi yang tampil di papan: yang sedang ditelusuri, atau posisi sekarang. */
-const analysedFen = computed(() => viewedPosition.value?.fen() ?? offline.fen.value)
-
-const evaluation = ref<Evaluation | null>(null)
-
-watch(
-  [analysisActive, analysedFen],
-  ([active, fen]) => {
-    if (active) analysePosition(fen, (result) => (evaluation.value = result))
-    else {
-      stopAnalysis()
-      evaluation.value = null
-    }
-  },
-  { immediate: true }
-)
-
-onBeforeUnmount(stopAnalysis)
-
 // Papan bayangan: kalau ada premove diantre, bidaknya sudah tampak "berpindah"
 // ke tujuannya walau langkah sungguhannya belum dikirim/dijalankan. Kalau
 // sedang menelusuri riwayat, itu yang ditampilkan sebagai gantinya.
@@ -223,17 +186,75 @@ const canPlay = computed<Color | null>(() =>
   isLive.value ? (isOnline.value ? online.canPlay.value : offline.canPlay.value) : null
 )
 
+// ---------------------------------------------------------------------------
+// Analisis Stockfish (worker tersendiri) — sumber bilah evaluasi DAN panah
+// saran. Menilai posisi yang SEDANG tampil sekuat mungkin, lepas dari kekuatan
+// bot, jadi keduanya jujur.
+// ---------------------------------------------------------------------------
+
+/** Bilah evaluasi: hanya lawan komputer, dan hanya bila sakelarnya sendiri menyala. */
+const evalBarVisible = computed(
+  () => showEvalBar.value && !isOnline.value && offline.mode.value === 'lawan-komputer'
+)
+/** Panah saran: lawan komputer ATAU dua pemain (tidak online). */
+const suggestionEnabled = computed(() => showSuggestion.value && !isOnline.value)
+/** Worker analisis jalan bila salah satu fitur memerlukannya. */
+const analysisActive = computed(() => evalBarVisible.value || suggestionEnabled.value)
+
+/** FEN posisi yang tampil: yang sedang ditelusuri, atau posisi sekarang. */
+const analysedFen = computed(() => viewedPosition.value?.fen() ?? offline.fen.value)
+
 /**
- * Panah saran: langkah terbaik menurut analiser, digambar hanya saat memang
- * giliran manusia menggerakkan sesuatu di posisi sekarang. `canPlay` sudah
- * merangkum semuanya — live, giliran manusia, bukan sedang mikir/usai/promosi —
- * jadi tinggal ditambah sakelarnya dan mode lawan komputer.
+ * FEN yang benar-benar dikirim ke analiser — atau null untuk menjedanya.
+ *
+ * Kalau cuma panah saran yang dipakai (bilah evaluasi mati), tidak ada gunanya
+ * menganalisis giliran LAWAN di posisi live: panahnya toh disembunyikan, dan
+ * worker langkah bot sudah menghabiskan satu inti sendiri. Menelusuri riwayat
+ * tetap dianalisis — di sanalah panah saran jadi alat review.
  */
-const suggestionArrow = computed<{ from: Square; to: Square } | null>(() => {
-  if (!showSuggestion.value || isOnline.value || offline.mode.value !== 'lawan-komputer') return null
-  if (canPlay.value === null) return null
-  return evaluation.value?.best ?? null
+const analysisFen = computed<string | null>(() => {
+  if (!analysisActive.value) return null
+  if (!evalBarVisible.value && isLive.value && canPlay.value === null) return null
+  return analysedFen.value
 })
+
+const evaluation = ref<Evaluation | null>(null)
+
+watch(
+  analysisFen,
+  (fen) => {
+    if (fen) analysePosition(fen, (result) => (evaluation.value = result))
+    else {
+      stopAnalysis()
+      evaluation.value = null
+    }
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(stopAnalysis)
+
+/** Kedalaman minimal sebelum panah saran ditampilkan — supaya tidak lompat-lompat sebelum mengendap. */
+const SUGGESTION_MIN_DEPTH = 6
+
+/**
+ * Panah saran: beberapa langkah teratas menurut analiser (MultiPV) untuk posisi
+ * yang tampil, terurut dari terbaik. `ChessBoard` menggambar yang pertama paling
+ * tegas, sisanya makin redup.
+ *
+ * Live → hanya saat giliran pihak yang boleh digerakkan (`canPlay`). Menelusuri
+ * riwayat → untuk posisi yang dilihat, siapa pun yang jalan (alat review).
+ * Hasil analiser dibuang kalau `fen`-nya sudah tidak cocok (basi sesaat setelah
+ * lawan menjawab) atau kedalamannya belum cukup.
+ */
+const suggestionArrows = computed<{ from: Square; to: Square }[]>(() => {
+  if (!suggestionEnabled.value) return []
+  if (isLive.value && canPlay.value === null) return []
+  const result = evaluation.value
+  if (!result || result.fen !== analysedFen.value || result.depth < SUGGESTION_MIN_DEPTH) return []
+  return result.moves
+})
+
 const premoveColor = computed<Color | null>(() =>
   isLive.value ? (isOnline.value ? online.premoveColor.value : offline.premoveColor.value) : null
 )
@@ -611,7 +632,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               :premove-queue="premoveQueue"
               :premove-failed="premoveFailed"
               :show-hints="showHints"
-              :suggestion="suggestionArrow"
+              :suggestions="suggestionArrows"
               @activate="activateSquare"
               @drop="dropPiece"
               @right-click="cancelPremove"
