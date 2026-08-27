@@ -156,7 +156,7 @@ export function useOnlineGame(serverUrl: string, options: UseOnlineGameOptions =
     const color = myColor.value
     if (!color) return clone
     for (const step of premoveQueue.value) {
-      const candidates = clone.pseudoMoves(color).filter((m) => m.from === step.from && m.to === step.to)
+      const candidates = clone.premoveMoves(color).filter((m) => m.from === step.from && m.to === step.to)
       if (candidates.length === 0) break
       const move = step.promotion
         ? (candidates.find((m) => m.promotion === step.promotion) ?? candidates[0])
@@ -200,7 +200,7 @@ export function useOnlineGame(serverUrl: string, options: UseOnlineGameOptions =
     if (!projected) return map
     const piece = projected.board[selected.value]
     if (!piece) return map
-    for (const move of projected.pseudoMoves(piece[0] as Color)) {
+    for (const move of projected.premoveMoves(piece[0] as Color)) {
       if (move.from !== selected.value) continue
       const list = map.get(move.to)
       if (list) list.push(move)
@@ -483,7 +483,7 @@ export function useOnlineGame(serverUrl: string, options: UseOnlineGameOptions =
     if (!color || !projected || premoveQueue.value.length >= MAX_PREMOVE_QUEUE) return false
     const piece = projected.board[from]
     if (!piece || piece[0] !== color) return false
-    const candidates = projected.pseudoMoves(color).filter((move) => move.from === from && move.to === to)
+    const candidates = projected.premoveMoves(color).filter((move) => move.from === from && move.to === to)
     if (candidates.length === 0) return false
     premoveQueue.value.push({ from, to, promotion: candidates[0].promotion ? 'q' : null })
     selected.value = null

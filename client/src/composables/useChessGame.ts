@@ -180,7 +180,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     const projected = projectedPosition.value
     const piece = projected.board[selected.value]
     if (!piece) return map
-    for (const move of projected.pseudoMoves(colorOf(piece))) {
+    for (const move of projected.premoveMoves(colorOf(piece))) {
       if (move.from !== selected.value) continue
       const list = map.get(move.to)
       if (list) list.push(move)
@@ -206,7 +206,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     const color = humanColor.value
     if (!color) return clone
     for (const step of premoveQueue.value) {
-      const candidates = clone.pseudoMoves(color).filter((m) => m.from === step.from && m.to === step.to)
+      const candidates = clone.premoveMoves(color).filter((m) => m.from === step.from && m.to === step.to)
       if (candidates.length === 0) break
       const move = step.promotion
         ? (candidates.find((m) => m.promotion === step.promotion) ?? candidates[0])
@@ -356,7 +356,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     const projected = projectedPosition.value
     const piece = projected.board[from]
     if (!piece || colorOf(piece) !== color) return false
-    const candidates = projected.pseudoMoves(color).filter((move) => move.from === from && move.to === to)
+    const candidates = projected.premoveMoves(color).filter((move) => move.from === from && move.to === to)
     if (candidates.length === 0) return false
     // Promosi premove selalu ke menteri — menunda dialog pemilihan sampai giliran
     // sungguhan tiba akan membingungkan, karena papan saat itu sudah bisa berbeda.

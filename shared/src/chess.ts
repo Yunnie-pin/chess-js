@@ -391,6 +391,137 @@ export class Position {
     }
   }
 
+  /**
+   * Langkah yang boleh DIPRE-MOVE (diantre saat giliran lawan) — lebih longgar
+   * dari `pseudoMoves`, karena langkah lawan di antaranya bisa menaruh atau
+   * menyingkirkan bidak di petak tujuan. Legalitas sungguhannya diperiksa ulang
+   * lewat `legalMoves` saat premove benar-benar dijalankan.
+   *
+   * Yang dilonggarkan dibanding pseudo-legal:
+   * - pion boleh melangkah diagonal ke petak MANA PUN di depannya (bakal jadi
+   *   tangkapan / en passant), termasuk yang sekarang berisi bidak sendiri —
+   *   kasus "lawan menangkap, aku balas menangkap";
+   * - bidak apa pun boleh menuju petak berisi bidak SENDIRI (langkah balas);
+   * - rokade cukup rajanya di petak asal + hak rokade + benteng di tempat;
+   *   halangan dan skak dibiarkan untuk pengecekan saat dijalankan.
+   *
+   * Yang TIDAK dilonggarkan: peluncur tetap berhenti di bidak pertama yang
+   * dijumpai — tidak bisa menembus barisan bidak.
+   *
+   * Raja lawan tidak pernah jadi petak tujuan (tidak ada langkah yang menangkap raja).
+   */
+  premoveMoves(color: Color): Move[] {
+    const moves: Move[] = []
+    for (let square = 0; square < 64; square++) {
+      const piece = this.board[square]
+      if (!piece || colorOf(piece) !== color) continue
+      switch (typeOf(piece)) {
+        case 'p':
+          this.premovePawn(moves, square, color)
+          break
+        case 'n':
+          this.premoveStep(moves, square, piece, KNIGHT_DIRS)
+          break
+        case 'b':
+          this.premoveSlide(moves, square, piece, BISHOP_DIRS)
+          break
+        case 'r':
+          this.premoveSlide(moves, square, piece, ROOK_DIRS)
+          break
+        case 'q':
+          this.premoveSlide(moves, square, piece, KING_DIRS)
+          break
+        case 'k':
+          this.premoveStep(moves, square, piece, KING_DIRS)
+          this.premoveCastle(moves, color)
+          break
+      }
+    }
+    return moves
+  }
+
+  private premovePawn(moves: Move[], from: Square, color: Color): void {
+    const piece = (color + 'p') as Piece
+    const dir = color === WHITE ? -1 : 1
+    const startRank = color === WHITE ? 6 : 1
+    const promoRank = color === WHITE ? 0 : 7
+    const rank = rankOf(from)
+    const file = fileOf(from)
+    const ahead = rank + dir
+
+    const add = (to: Square): void => {
+      const target = this.board[to]
+      const captured = target && colorOf(target) !== color ? target : null
+      moves.push(
+        createMove(from, to, piece, captured, rankOf(to) === promoRank ? { promotion: 'q' } : undefined)
+      )
+    }
+
+    if (onBoard(ahead, file) && !this.board[sq(ahead, file)]) {
+      add(sq(ahead, file))
+      if (rank === startRank && !this.board[sq(rank + dir * 2, file)]) {
+        moves.push(createMove(from, sq(rank + dir * 2, file), piece, null, { doublePush: true }))
+      }
+    }
+    // Diagonal: selalu bisa dipre-move, terlepas dari isi petaknya sekarang.
+    for (const df of [-1, 1]) {
+      if (!onBoard(ahead, file + df)) continue
+      const to = sq(ahead, file + df)
+      const target = this.board[to]
+      if (target && typeOf(target) === 'k') continue
+      add(to)
+    }
+  }
+
+  private premoveStep(moves: Move[], from: Square, piece: Piece, dirs: Direction[]): void {
+    const rank = rankOf(from)
+    const file = fileOf(from)
+    for (const [dr, df] of dirs) {
+      if (!onBoard(rank + dr, file + df)) continue
+      const to = sq(rank + dr, file + df)
+      const target = this.board[to]
+      if (target && typeOf(target) === 'k') continue
+      moves.push(createMove(from, to, piece, target && colorOf(target) !== colorOf(piece) ? target : null))
+    }
+  }
+
+  private premoveSlide(moves: Move[], from: Square, piece: Piece, dirs: Direction[]): void {
+    const rank = rankOf(from)
+    const file = fileOf(from)
+    for (const [dr, df] of dirs) {
+      let r = rank + dr
+      let f = file + df
+      while (onBoard(r, f)) {
+        const to = sq(r, f)
+        const target = this.board[to]
+        if (target) {
+          // Petak berisi bidak pertama tetap boleh jadi tujuan (langkah balas /
+          // tangkapan), tapi peluncur berhenti di situ — tak menembus.
+          if (typeOf(target) !== 'k') {
+            moves.push(createMove(from, to, piece, colorOf(target) !== colorOf(piece) ? target : null))
+          }
+          break
+        }
+        moves.push(createMove(from, to, piece, null))
+        r += dr
+        f += df
+      }
+    }
+  }
+
+  private premoveCastle(moves: Move[], color: Color): void {
+    const home = color === WHITE ? 7 : 0
+    const kingSquare = sq(home, 4)
+    if (this.board[kingSquare] !== color + 'k') return
+    const king = (color + 'k') as Piece
+    if (this.castling[`${color}k`] && this.board[sq(home, 7)] === color + 'r') {
+      moves.push(createMove(kingSquare, sq(home, 6), king, null, { castle: 'k' }))
+    }
+    if (this.castling[`${color}q`] && this.board[sq(home, 0)] === color + 'r') {
+      moves.push(createMove(kingSquare, sq(home, 2), king, null, { castle: 'q' }))
+    }
+  }
+
   /** Langkah legal untuk pihak yang sedang jalan. */
   legalMoves(capturesOnly = false): Move[] {
     const color = this.turn
