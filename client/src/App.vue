@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'v
 
 import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
+import EvalBar from './components/EvalBar.vue'
 import GameControls from './components/GameControls.vue'
 import LanguageSwitch from './components/LanguageSwitch.vue'
 import SettingsMenu from './components/SettingsMenu.vue'
@@ -20,6 +21,8 @@ import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
 import { resolveServerUrl } from './net/serverUrl.ts'
+import { premoveEnabled, showEvalBar, showHints, undoEnabled } from './settings.ts'
+import { analysePosition, stopAnalysis, type Evaluation } from './engine/stockfishEngine.ts'
 import { Position, START_FEN, opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
 
@@ -27,12 +30,10 @@ type AppMode = 'offline' | 'online'
 
 const { t, formatNumber } = useI18n()
 
-// Sakelar premove dibagi ke kedua composable, supaya satu checkbox berlaku
-// di mode offline maupun online sekaligus — sama seperti showHints sekarang.
-const premoveEnabled = ref(true)
-// Undo cuma ada di mode lokal (di online papan milik server), jadi sakelarnya
-// tidak perlu dibagi ke useOnlineGame seperti premoveEnabled.
-const undoEnabled = ref(true)
+// Sakelar bantuan bermain (petunjuk, premove, undo, bilah evaluasi) tinggal di
+// `settings.ts`, yang menyimpannya ke localStorage. `premoveEnabled` diteruskan
+// ke kedua composable supaya satu checkbox berlaku di mode offline dan online;
+// `undoEnabled` cuma ke yang offline (di online papan milik server).
 const offline = useChessGame({ premoveEnabled, undoEnabled })
 const online = useOnlineGame(resolveServerUrl(), { premoveEnabled })
 
@@ -133,6 +134,36 @@ const viewedPosition = computed<Position | null>(() => {
   const entry = offline.history.value[displayPly.value - 1]
   return new Position(entry ? entry.fen : START_FEN)
 })
+
+// ---------------------------------------------------------------------------
+// Bilah evaluasi — worker analisis Stockfish tersendiri menilai posisi yang
+// SEDANG tampil (termasuk saat menelusuri riwayat), hanya di mode lawan
+// komputer. Lepas dari kekuatan bot: yang lemah pun tetap dinilai sekuat
+// mungkin, jadi bilahnya jujur.
+// ---------------------------------------------------------------------------
+
+const analysisActive = computed(
+  () => showEvalBar.value && !isOnline.value && offline.mode.value === 'lawan-komputer'
+)
+
+/** FEN posisi yang tampil di papan: yang sedang ditelusuri, atau posisi sekarang. */
+const analysedFen = computed(() => viewedPosition.value?.fen() ?? offline.fen.value)
+
+const evaluation = ref<Evaluation | null>(null)
+
+watch(
+  [analysisActive, analysedFen],
+  ([active, fen]) => {
+    if (active) analysePosition(fen, (result) => (evaluation.value = result))
+    else {
+      stopAnalysis()
+      evaluation.value = null
+    }
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(stopAnalysis)
 
 // Papan bayangan: kalau ada premove diantre, bidaknya sudah tampak "berpindah"
 // ke tujuannya walau langkah sungguhannya belum dikirim/dijalankan. Kalau
@@ -516,15 +547,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </nav>
         <LanguageSwitch />
         <SettingsMenu
-          v-model:show-hints="offline.showHints.value"
+          v-model:show-hints="showHints"
           v-model:premove-enabled="premoveEnabled"
           v-model:undo-enabled="undoEnabled"
+          v-model:show-eval-bar="showEvalBar"
         />
       </div>
     </header>
 
     <main class="layout">
-      <div class="board-column">
+      <div class="board-column" :class="{ 'board-column--eval': analysisActive }">
         <div class="player">
           <div class="player__id">
             <OpponentFace v-if="topFace" :opponent="topFace" />
@@ -542,40 +574,44 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           />
         </div>
 
-        <div class="board-wrap">
-          <ChessBoard
-            ref="chessBoardRef"
-            :board="board"
-            :orientation="orientation"
-            :selected="selected"
-            :targets="targets"
-            :last-move="lastMove"
-            :check-square="checkSquare"
-            :playable="canPlay"
-            :premove-color="premoveColor"
-            :premove-queue="premoveQueue"
-            :premove-failed="premoveFailed"
-            :show-hints="offline.showHints.value"
-            @activate="activateSquare"
-            @drop="dropPiece"
-            @right-click="cancelPremove"
-          />
+        <div class="board-stage">
+          <EvalBar v-if="analysisActive" :evaluation="evaluation" :orientation="orientation" />
 
-          <Transition name="board-dim">
-            <div v-if="statusOverlayVisible" class="board-dim">
-              <div class="status status--center" :class="`status--${statusTone}`">
-                <span>{{ statusText }}</span>
-                <button
-                  v-if="overlayActionVisible"
-                  type="button"
-                  class="status__action"
-                  @click="overlayAction"
-                >
-                  {{ overlayActionLabel }}
-                </button>
+          <div class="board-wrap">
+            <ChessBoard
+              ref="chessBoardRef"
+              :board="board"
+              :orientation="orientation"
+              :selected="selected"
+              :targets="targets"
+              :last-move="lastMove"
+              :check-square="checkSquare"
+              :playable="canPlay"
+              :premove-color="premoveColor"
+              :premove-queue="premoveQueue"
+              :premove-failed="premoveFailed"
+              :show-hints="showHints"
+              @activate="activateSquare"
+              @drop="dropPiece"
+              @right-click="cancelPremove"
+            />
+
+            <Transition name="board-dim">
+              <div v-if="statusOverlayVisible" class="board-dim">
+                <div class="status status--center" :class="`status--${statusTone}`">
+                  <span>{{ statusText }}</span>
+                  <button
+                    v-if="overlayActionVisible"
+                    type="button"
+                    class="status__action"
+                    @click="overlayAction"
+                  >
+                    {{ overlayActionLabel }}
+                  </button>
+                </div>
               </div>
-            </div>
-          </Transition>
+            </Transition>
+          </div>
         </div>
 
         <div class="player">
@@ -595,12 +631,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           />
         </div>
 
-        <MoveHistory
-          :rows="historyRows"
-          :ply-count="plyCount"
-          :active-ply="displayPly"
-          @jump="jumpView"
-        />
+        <div class="history-slot">
+          <MoveHistory
+            :rows="historyRows"
+            :ply-count="plyCount"
+            :active-ply="displayPly"
+            @jump="jumpView"
+          />
+        </div>
       </div>
 
       <aside class="panel">
@@ -804,6 +842,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   flex-direction: column;
   gap: 0.55rem;
   min-width: 0;
+}
+
+/* Bilah evaluasi berdiri di kiri papan di dalam `.board-stage`. Supaya papan
+   tetap sejajar dengan papan nama pemain dan daftar langkah, baris-baris itu
+   digeser sejauh lebar bilah (1.5rem) + selanya (0.5rem). */
+.board-stage {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.board-stage .board-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-column--eval > .player,
+.board-column--eval > .history-slot {
+  padding-left: 2rem;
 }
 
 .player {

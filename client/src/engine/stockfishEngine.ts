@@ -102,3 +102,134 @@ export function terminateStockfish(): void {
   worker = null
   ready = null
 }
+
+// ---------------------------------------------------------------------------
+// Analyser — worker Stockfish KEDUA, khusus menilai posisi yang sedang tampil
+// untuk bilah evaluasi.
+//
+// Sengaja terpisah dari worker langkah di atas: yang satu memilih langkah bot
+// pada kekuatan TERBATAS (UCI_LimitStrength), yang ini menilai posisi sekuat
+// mungkin pada kedalaman tetap. Menumpang di worker yang sama berarti tiap
+// langkah bot dan tiap analisis akan saling menghentikan pencarian — jadi
+// dua worker, dengan ongkos satu instans WASM (~7 MB) lagi di memori.
+// ---------------------------------------------------------------------------
+
+/** Kedalaman analisis bilah evaluasi — tetap, lepas dari level bot yang dipilih. */
+const ANALYSIS_DEPTH = 16
+
+export interface Evaluation {
+  /** Centipawn dari sudut pandang PUTIH; null selama belum ada kabar dari mesin. */
+  cp: number | null
+  /** Mat dalam N langkah dari sudut Putih (positif = Putih memberi mat); null bila bukan mat paksa. */
+  mate: number | null
+  /** Kedalaman baris `info` terakhir. */
+  depth: number
+}
+
+type EvaluationListener = (evaluation: Evaluation) => void
+
+let analyser: Worker | null = null
+let analyserReady: Promise<void> | null = null
+let analysisListener: EvaluationListener | null = null
+/** FEN yang benar-benar sedang dicari worker, atau null bila menganggur. */
+let searchingFen: string | null = null
+/** FEN terbaru yang diminta tapi belum dimulai — worker masih menghentikan pencarian sebelumnya. */
+let pendingFen: string | null = null
+
+function getAnalyser(): Worker {
+  if (!analyser) {
+    analyser = new Worker(ENGINE_URL)
+    analyser.addEventListener('message', onAnalyserLine)
+  }
+  return analyser
+}
+
+/** Handshake UCI tersendiri untuk worker analisis — sekali saja. */
+function analyserWhenReady(): Promise<void> {
+  if (analyserReady) return analyserReady
+  const engine = getAnalyser()
+  analyserReady = new Promise((resolve) => {
+    const onLine = (event: MessageEvent<string>): void => {
+      if (event.data === 'uciok') engine.postMessage('isready')
+      else if (event.data === 'readyok') {
+        engine.removeEventListener('message', onLine)
+        resolve()
+      }
+    }
+    engine.addEventListener('message', onLine)
+    engine.postMessage('uci')
+  })
+  return analyserReady
+}
+
+/** Skor Stockfish selalu dari sudut pihak yang jalan — FEN field ke-2 memberi tahu siapa. */
+function sideToMove(fen: string): 'w' | 'b' {
+  return fen.split(' ')[1] === 'b' ? 'b' : 'w'
+}
+
+function startAnalysis(fen: string): void {
+  const engine = getAnalyser()
+  searchingFen = fen
+  engine.postMessage(`position fen ${fen}`)
+  engine.postMessage(`go depth ${ANALYSIS_DEPTH}`)
+}
+
+function onAnalyserLine(event: MessageEvent<string>): void {
+  const line = event.data
+  if (typeof line !== 'string') return
+
+  if (line.startsWith('bestmove')) {
+    // Pencarian berhenti — entah tuntas sampai ANALYSIS_DEPTH, entah karena
+    // `stop`. Baru sekarang (sesudah `bestmove`) dijamin tidak ada lagi baris
+    // `info` nyasar dari pencarian lama, jadi posisi berikutnya aman dimulai.
+    searchingFen = null
+    if (pendingFen) {
+      const next = pendingFen
+      pendingFen = null
+      startAnalysis(next)
+    }
+    return
+  }
+
+  // Selagi berpindah posisi (`pendingFen` terisi) baris `info` yang masuk masih
+  // milik posisi lama — abaikan sampai `bestmove`-nya lewat.
+  if (pendingFen || !searchingFen || !analysisListener || !line.startsWith('info ')) return
+
+  const cpMatch = /\bscore cp (-?\d+)/.exec(line)
+  const mateMatch = /\bscore mate (-?\d+)/.exec(line)
+  if (!cpMatch && !mateMatch) return
+  const depthMatch = /\bdepth (\d+)/.exec(line)
+
+  const flip = sideToMove(searchingFen) === 'b' ? -1 : 1
+  analysisListener({
+    cp: cpMatch ? Number(cpMatch[1]) * flip : null,
+    mate: mateMatch ? Number(mateMatch[1]) * flip : null,
+    depth: depthMatch ? Number(depthMatch[1]) : 0
+  })
+}
+
+/**
+ * Minta bilah evaluasi menilai `fen`, memanggil `onUpdate` tiap kali kedalaman
+ * bertambah. Aman dipanggil berulang dengan FEN yang sama (tidak melakukan
+ * apa-apa) atau berganti-ganti — pencarian yang sedang jalan dihentikan lebih
+ * dulu, dan yang baru menyusul begitu `bestmove` lama lewat.
+ */
+export function analysePosition(fen: string, onUpdate: EvaluationListener): void {
+  analysisListener = onUpdate
+  void analyserWhenReady().then(() => {
+    if (searchingFen === fen || pendingFen === fen) return
+    if (searchingFen === null) {
+      startAnalysis(fen)
+    } else {
+      pendingFen = fen
+      getAnalyser().postMessage('stop')
+    }
+  })
+}
+
+/** Hentikan analisis dan lepas pendengarnya — dipanggil saat bilah dimatikan atau keluar dari mode lawan komputer. */
+export function stopAnalysis(): void {
+  analysisListener = null
+  pendingFen = null
+  if (analyser && searchingFen !== null) analyser.postMessage('stop')
+}

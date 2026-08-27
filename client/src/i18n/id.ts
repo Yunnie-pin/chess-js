@@ -82,6 +82,9 @@ export const id = {
   'controls.showHints': 'Tampilkan petunjuk langkah',
   'controls.premove': 'Aktifkan premove',
   'controls.undoEnabled': 'Aktifkan batalkan langkah',
+  'controls.evalBar': 'Tampilkan bilah evaluasi',
+  /** Diikuti skornya, mis. "Evaluasi: +1,2". */
+  'evalBar.ariaLabel': 'Evaluasi: {score}',
   'premove.queued': 'Premove menunggu giliran',
   'premove.cancel': 'Batalkan',
   'controls.newGame': 'Permainan baru',

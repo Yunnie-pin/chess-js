@@ -59,9 +59,9 @@ export const MIN_REPLY_MS = 500
 
 export interface UseChessGameOptions {
   /**
-   * Sakelar premove, dibagi dari luar (App.vue) supaya nilainya sama di mode
-   * offline dan online sekaligus — persis seperti `showHints` sekarang, yang
-   * checkbox-nya cuma ada satu tapi dipakai di kedua papan.
+   * Sakelar premove, dibagi dari luar (App.vue, dari `settings.ts`) supaya
+   * nilainya sama di mode offline dan online sekaligus — checkbox-nya cuma ada
+   * satu tapi dipakai di kedua papan.
    */
   premoveEnabled?: Ref<boolean>
   /**
@@ -107,7 +107,6 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   const mode = ref<GameMode>('lawan-komputer')
   const aiColor = ref<Color>('b')
   const elo = ref<EloRating>(DEFAULT_ELO)
-  const showHints = ref(true)
 
   const thinking = ref(false)
   const lastSearch = ref<{ depth: number; nodes: number; timeMs: number } | null>(null)
@@ -679,7 +678,6 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     mode,
     aiColor,
     elo,
-    showHints,
     eloLevels: ELO_LEVELS,
     strengthProfiles: STRENGTH_PROFILES,
     // aksi

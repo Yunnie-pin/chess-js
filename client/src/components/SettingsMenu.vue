@@ -14,6 +14,7 @@ const { t } = useI18n()
 const showHints = defineModel<boolean>('showHints', { required: true })
 const premoveEnabled = defineModel<boolean>('premoveEnabled', { required: true })
 const undoEnabled = defineModel<boolean>('undoEnabled', { required: true })
+const showEvalBar = defineModel<boolean>('showEvalBar', { required: true })
 
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
@@ -91,6 +92,10 @@ onBeforeUnmount(() => {
       <label class="switch">
         <input v-model="undoEnabled" type="checkbox" />
         <span>{{ t('controls.undoEnabled') }}</span>
+      </label>
+      <label class="switch">
+        <input v-model="showEvalBar" type="checkbox" />
+        <span>{{ t('controls.evalBar') }}</span>
       </label>
     </div>
   </div>
