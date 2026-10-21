@@ -10,10 +10,11 @@ import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { effectScope } from 'vue'
+import { effectScope, watch } from 'vue'
 
 import { fromAlgebraic } from '@chess/shared/chess'
 import { useOnlineGame } from '../src/composables/useOnlineGame.ts'
+import { appendedPlies, justResigned, opponentJoined } from '../src/sound/onlineSounds.ts'
 
 type Online = ReturnType<typeof useOnlineGame>
 
@@ -323,4 +324,50 @@ test('premove online bisa diantre berantai, dihitung dari papan bayangan langkah
   assert.equal(black.displayBoard.value[at('e4')], 'bp')
   assert.equal(black.displayBoard.value[at('e7')], null)
   assert.equal(black.board.value[at('e7')], 'bp', 'posisi sungguhan belum berubah')
+})
+
+test('urutan state server cocok dengan pemicu efek suara: bergabung, langkah, resync, menyerah', async () => {
+  // Pemicu suara online di App hanya membandingkan potret room lama dan baru.
+  // Tes ini memastikan potret yang BENAR-BENAR dikirim server menghasilkan
+  // tepat satu kejadian per peristiwa — bukan suara saat bergabung atau resync.
+  const host = makeClient()
+  const events: string[] = []
+  const scope = effectScope()
+  scopes.push(scope)
+  scope.run(() =>
+    watch(
+      () => host.roomState.value,
+      (next, prev) => {
+        if (!next) return
+        if (opponentJoined(prev ?? null, next)) events.push('bergabung')
+        const added = appendedPlies(prev ?? null, next)
+        if (added) events.push(`ply+${added}`)
+        const resigned = justResigned(prev ?? null, next)
+        if (resigned) events.push(`menyerah:${resigned}`)
+      }
+    )
+  )
+
+  host.createRoom('Ani', 'w')
+  await waitUntil(() => host.inRoom.value, 'tuan rumah masuk room')
+  const guest = makeClient()
+  guest.joinRoom(host.roomId.value!, 'Budi')
+  await waitUntil(() => events.includes('bergabung'), 'tuan rumah melihat lawan bergabung')
+
+  host.activateSquare(at('e2'))
+  host.activateSquare(at('e4'))
+  await waitUntil(() => guest.historyRows.value.length === 1, 'langkah putih sampai')
+  guest.activateSquare(at('e7'))
+  guest.activateSquare(at('e5'))
+  await waitUntil(() => host.roomState.value?.history.length === 2, 'langkah hitam sampai')
+
+  // Langkah mustahil → server menolak dan mengirim ulang potret yang sama.
+  host.playMove({ from: at('e2'), to: at('e5'), promotion: null })
+  await sleep(400)
+
+  guest.resign()
+  await waitUntil(() => !!host.roomState.value?.resignedBy, 'menyerah sampai')
+  await sleep(200)
+
+  assert.deepEqual(events, ['bergabung', 'ply+1', 'ply+1', 'menyerah:b'])
 })

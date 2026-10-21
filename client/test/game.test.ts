@@ -623,3 +623,13 @@ test('importGame: fase analisis — riwayat utuh, papan beku, mesin & undo diam'
     assert.equal(game.phase.value, 'setup')
     assert.equal(game.history.value.length, 0)
   }))
+
+test('dropPiece melaporkan penolakan: ilegal → false, sah atau batal seret → true', () =>
+  withGame((game) => {
+    assert.equal(game.dropPiece(at('e2'), at('e2')), true, 'melepas di petak asal cuma batal seret')
+    assert.equal(game.dropPiece(at('e2'), at('e5')), false, 'pion tidak bisa maju tiga petak')
+    assert.equal(game.history.value.length, 0)
+    assert.equal(game.selected.value, null, 'pilihan dibersihkan sesudah ditolak')
+    assert.equal(game.dropPiece(at('e2'), at('e4')), true)
+    assert.equal(game.history.value.length, 1)
+  }))

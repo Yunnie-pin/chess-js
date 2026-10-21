@@ -35,7 +35,9 @@ import {
   soundEnabled,
   undoEnabled
 } from './settings.ts'
-import { soundsForMove } from './sound/moveSound.ts'
+import { endSound, soundsForMove, type SoundName } from './sound/moveSound.ts'
+import { appendedPlies, justResigned, opponentJoined } from './sound/onlineSounds.ts'
+import { alertTab } from './sound/tabAlert.ts'
 import { playSounds, primeAudioOnFirstGesture } from './sound/synth.ts'
 import { analysePosition, stopAnalysis, type Evaluation } from './engine/stockfishEngine.ts'
 import { Position, START_FEN, opponent } from '@chess/shared/chess'
@@ -483,8 +485,10 @@ const dropPiece = (from: Square, to: Square) => {
     viewPly.value = null
     return
   }
-  if (isOnline.value) online.dropPiece(from, to)
-  else offline.dropPiece(from, to)
+  const accepted = isOnline.value ? online.dropPiece(from, to) : offline.dropPiece(from, to)
+  // Hanya seret-lepas yang ditolak yang berbunyi — klik petak lain cuma
+  // mengganti pilihan, bukan mencoba langkah, jadi tidak "ilegal".
+  if (!accepted && soundEnabled.value) playSounds(['illegal'])
 }
 
 /** Mundur/maju satu ply; sampai di ujung terbaru kembali "mengikuti" posisi sekarang. */
@@ -501,8 +505,41 @@ function clearBoardAnnotations(): void {
 /** Mundur/maju satu ply; sampai di ujung terbaru kembali "mengikuti" posisi sekarang. */
 function stepView(delta: -1 | 1): void {
   const next = Math.min(plyCount.value, Math.max(0, displayPly.value + delta))
+  if (next !== displayPly.value && soundEnabled.value) {
+    // Maju: langkah yang baru tampil; mundur: langkah yang baru ditarik —
+    // seperti memutar ulang partai. Lompatan (klik daftar/grafik) sengaja diam.
+    playSounds(browseSounds(delta === 1 ? next : displayPly.value))
+  }
   viewPly.value = next === plyCount.value ? null : next
   clearBoardAnnotations()
+}
+
+/**
+ * Bunyi satu ply saat menelusuri riwayat: langkahnya saja (atau skak), tanpa
+ * jingle akhir — memutar ulang langkah terakhir partai bukan "partai usai lagi".
+ */
+function browseSounds(ply: number): SoundName[] {
+  if (ply < 1) return []
+  const san = gameRecord.value.sans[ply - 1] ?? ''
+  const mover: Color = ply % 2 === 1 ? 'w' : 'b'
+  const check = san.endsWith('+') || san.endsWith('#')
+  const status = { over: false, winner: null, check }
+  if (isOnline.value) {
+    const entry = online.roomState.value?.history[ply - 1]
+    if (!entry) return []
+    return soundsForMove({
+      move: {
+        captured: entry.captured,
+        castle: san.startsWith('O-O') ? 'k' : null,
+        promotion: entry.move.promotion
+      },
+      mover,
+      status,
+      me: online.myColor.value
+    })
+  }
+  const entry = offline.history.value[ply - 1]
+  return entry ? soundsForMove({ move: entry.move, mover, status, me: offlineListener.value }) : []
 }
 
 function jumpView(ply: number): void {
@@ -847,6 +884,85 @@ watch(
     if (phase === 'playing' && previous === 'setup' && soundEnabled.value && !isOnline.value) {
       playSounds(['game-start'])
     }
+  }
+)
+
+/**
+ * Online: tiap pesan server membawa potret room utuh, jadi yang berbunyi
+ * hanya PERUBAHAN yang berarti antara potret lama dan baru (lihat
+ * `sound/onlineSounds.ts`) — bukan bergabung, resync, atau reconnect.
+ * Langkah sendiri pun berbunyi saat server mengonfirmasinya, bukan saat
+ * diklik: yang didengar selalu langkah yang benar-benar sah.
+ */
+watch(
+  () => online.roomState.value,
+  (next, prev) => {
+    if (!isOnline.value || !next) return
+    const me = online.myColor.value
+    const sounds: SoundName[] = []
+
+    const added = appendedPlies(prev ?? null, next)
+    if (added) {
+      const first = next.history.length - added
+      next.history.slice(first).forEach((entry, i) => {
+        const ply = first + i
+        const isLast = ply === next.history.length - 1
+        sounds.push(
+          ...soundsForMove({
+            move: {
+              captured: entry.captured,
+              castle: entry.san.startsWith('O-O') ? 'k' : null,
+              promotion: entry.move.promotion
+            },
+            // Partai online selalu dimulai dari posisi awal: ply genap = Putih.
+            mover: ply % 2 === 0 ? 'w' : 'b',
+            status:
+              isLast && online.gameStatus.value
+                ? online.gameStatus.value
+                : { over: false, winner: null, check: entry.san.endsWith('+') },
+            me
+          })
+        )
+      })
+      // Giliran kembali ke kita selagi tab di belakang — beri tahu lewat judul.
+      if (me && next.history.length % 2 === (me === 'w' ? 0 : 1) && !online.gameStatus.value?.over) {
+        alertTab(t('tab.yourTurn'))
+      }
+    }
+
+    const resigned = justResigned(prev ?? null, next)
+    if (resigned) sounds.push(endSound(opponent(resigned), me))
+
+    if (me && opponentJoined(prev ?? null, next)) {
+      sounds.push('game-start')
+      alertTab(t('tab.opponentJoined'))
+    }
+
+    // Main lagi: room yang sama, riwayat kembali kosong, dan tidak sedang menunggu.
+    if (prev && prev.roomId === next.roomId && prev.history.length > 0 && !next.history.length && !next.waiting) {
+      sounds.push('game-start')
+    }
+
+    if (soundEnabled.value) playSounds(sounds)
+  }
+)
+
+/*
+ * Premove: klik halus saat diantre, buzz saat gagal (sudah tidak legal ketika
+ * gilirannya tiba). Antreannya dibaca langsung dari composable, BUKAN dari
+ * `premoveQueue` di atas — yang itu dikosongkan selama menelusuri riwayat,
+ * jadi kembali ke posisi live akan terbaca sebagai "antrean bertambah".
+ */
+watch(
+  () => (isOnline.value ? online.premoveQueue.value.length : offline.premoveQueue.value.length),
+  (length, previous) => {
+    if (length > previous && soundEnabled.value) playSounds(['premove'])
+  }
+)
+watch(
+  () => (isOnline.value ? online.premoveFailed.value : offline.premoveFailed.value),
+  (failed) => {
+    if (failed && soundEnabled.value) playSounds(['illegal'])
   }
 )
 

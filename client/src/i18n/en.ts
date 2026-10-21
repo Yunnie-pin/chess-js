@@ -27,6 +27,10 @@ export const en: Messages = {
   'status.notStarted': 'Set your opponent and colour, then press "Start"',
   'status.analysis': 'Imported game ({result}) — browse and review',
   'status.noRoom': 'Not in a room yet',
+
+  'tab.yourTurn': 'Your move',
+  'tab.opponentJoined': 'Opponent joined',
+
   'status.waitingOpponent': 'Waiting for an opponent to join…',
   'status.resigned': '{loser} resigned — {winner} wins',
   'status.checkmateWin': 'Checkmate — {winner} wins',

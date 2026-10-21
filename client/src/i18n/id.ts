@@ -37,6 +37,11 @@ export const id = {
   'status.notStarted': 'Atur lawan dan warna, lalu tekan "Mulai"',
   'status.analysis': 'Partai impor ({result}) — telusuri dan ulas',
   'status.noRoom': 'Belum berada di room mana pun',
+
+  // Penanda judul tab saat tab tersembunyi
+  'tab.yourTurn': 'Giliran Anda',
+  'tab.opponentJoined': 'Lawan bergabung',
+
   'status.waitingOpponent': 'Menunggu lawan bergabung…',
   'status.resigned': '{loser} menyerah — {winner} menang',
   'status.checkmateWin': 'Skakmat — {winner} menang',

@@ -19,6 +19,7 @@ export type SoundName =
   | 'game-draw'
   | 'game-end'
   | 'illegal'
+  | 'premove'
 
 export interface MoveSoundInput {
   move: Pick<Move, 'captured' | 'castle' | 'promotion'>

@@ -9,6 +9,8 @@ import assert from 'node:assert/strict'
 
 import { endSound, soundsForMove, type MoveSoundInput } from '../src/sound/moveSound.ts'
 import { playSounds, primeAudioOnFirstGesture, setAudioContextFactory } from '../src/sound/synth.ts'
+import { appendedPlies, justResigned, opponentJoined } from '../src/sound/onlineSounds.ts'
+import { alertTab } from '../src/sound/tabAlert.ts'
 
 const quiet = { over: false, winner: null, check: false } as const
 const plain = { captured: null, castle: null, promotion: null } as const
@@ -141,5 +143,57 @@ test('primeAudioOnFirstGesture: konteks yang tertangguhkan dibuka pada interaksi
   assert.equal(fake.resumed, 1)
   target.dispatchEvent(new Event('pointerdown'))
   assert.equal(fake.resumed, 1, 'pendengarnya dilepas sesudah interaksi pertama')
+  setAudioContextFactory(null)
+})
+
+const room = (history: string[], extra: Partial<{ roomId: string; waiting: boolean; resignedBy: 'w' | 'b' | null }> = {}) => ({
+  roomId: 'ABC',
+  history: history.map((san) => ({ san })),
+  waiting: false,
+  resignedBy: null,
+  ...extra
+})
+
+test('appendedPlies: hanya riwayat yang bertambah di ujung, di room yang sama', () => {
+  assert.equal(appendedPlies(room(['e4']), room(['e4', 'e5'])), 1)
+  assert.equal(appendedPlies(room(['e4']), room(['e4', 'e5', 'Nf3'])), 2, 'premove / reconnect singkat')
+  assert.equal(appendedPlies(null, room(['e4', 'e5'])), 0, 'state pertama sesudah bergabung')
+  assert.equal(appendedPlies(room(['e4']), room(['e4', 'e5'], { roomId: 'XYZ' })), 0, 'room lain')
+  assert.equal(appendedPlies(room(['e4', 'e5']), room(['e4', 'e5'])), 0, 'resync tanpa perubahan')
+  assert.equal(appendedPlies(room(['e4', 'e5']), room([])), 0, 'rematch')
+  assert.equal(appendedPlies(room(['e4']), room(['e4', 'e5', 'Nf3', 'Nc6'])), 0, 'lompatan jauh = resync')
+  assert.equal(appendedPlies(room(['e4']), room(['d4', 'd5'])), 0, 'awalan berbeda')
+})
+
+test('opponentJoined / justResigned: transisi di room yang sama saja', () => {
+  assert.equal(opponentJoined(room([], { waiting: true }), room([])), true)
+  assert.equal(opponentJoined(null, room([])), false)
+  assert.equal(opponentJoined(room([]), room([])), false)
+  assert.equal(justResigned(room(['e4']), room(['e4'], { resignedBy: 'b' })), 'b')
+  assert.equal(justResigned(room(['e4'], { resignedBy: 'b' }), room(['e4'], { resignedBy: 'b' })), null)
+  assert.equal(justResigned(null, room(['e4'], { resignedBy: 'b' })), null)
+})
+
+test('alertTab: hanya saat tersembunyi; judul asli pulih saat tab dilihat lagi', () => {
+  const doc = Object.assign(new EventTarget(), { hidden: false, title: 'Chess with Mari' })
+  alertTab('Giliran Anda', doc)
+  assert.equal(doc.title, 'Chess with Mari', 'tab yang sedang dilihat tidak diubah')
+
+  doc.hidden = true
+  alertTab('Lawan bergabung', doc)
+  alertTab('Giliran Anda', doc)
+  assert.equal(doc.title, '● Giliran Anda — Chess with Mari', 'tidak menumpuk penanda')
+
+  doc.hidden = false
+  doc.dispatchEvent(new Event('visibilitychange'))
+  assert.equal(doc.title, 'Chess with Mari')
+})
+
+test('playSounds: suara premove dan ilegal punya resep', () => {
+  const fake = fakeAudio()
+  setAudioContextFactory(() => fake.ctx)
+  playSounds(['premove'])
+  playSounds(['illegal'])
+  assert.ok(fake.started.length >= 2)
   setAudioContextFactory(null)
 })

@@ -148,6 +148,8 @@ const RECIPES: Record<SoundName, (audio: AudioContext, t: number, out: AudioNode
   'game-end': (a, t, o) => {
     ;[523, 784, 1047].forEach((f, i) => tone(a, t + i * 0.1, o, f, i === 2 ? 0.35 : 0.14, 0.2))
   },
+  // Premove diantre: ketukan kecil bernada tinggi — "tercatat", bukan "dimainkan".
+  premove: (a, t, o) => knock(a, t, o, 3200, 0.35),
   illegal: (a, t, o) => {
     const osc = a.createOscillator()
     osc.type = 'square'

@@ -572,9 +572,16 @@ export function useOnlineGame(serverUrl: string, options: UseOnlineGameOptions =
     selected.value = piece && piece[0] === color ? square : null
   }
 
-  function dropPiece(from: Square, to: Square): void {
-    if (from === to) return
-    if (!tryMove(from, to)) selected.value = null
+  /**
+   * Seret-lepas. Mengembalikan `false` bila langkahnya DITOLAK (petak tujuan
+   * tidak sah) — App memakainya untuk bunyi "langkah ilegal". Melepas di petak
+   * asal bukan penolakan, cuma batal seret.
+   */
+  function dropPiece(from: Square, to: Square): boolean {
+    if (from === to) return true
+    if (tryMove(from, to)) return true
+    selected.value = null
+    return false
   }
 
   function resign(): void {
