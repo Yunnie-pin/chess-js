@@ -27,7 +27,16 @@ import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
 import { resolveServerUrl } from './net/serverUrl.ts'
-import { premoveEnabled, showEvalBar, showHints, showSuggestion, undoEnabled } from './settings.ts'
+import {
+  premoveEnabled,
+  showEvalBar,
+  showHints,
+  showSuggestion,
+  soundEnabled,
+  undoEnabled
+} from './settings.ts'
+import { soundsForMove } from './sound/moveSound.ts'
+import { playSounds, primeAudioOnFirstGesture } from './sound/synth.ts'
 import { analysePosition, stopAnalysis, type Evaluation } from './engine/stockfishEngine.ts'
 import { Position, START_FEN, opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
@@ -793,6 +802,56 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Efek suara (lihat `sound/`). Yang sulit bukan bunyinya, tapi KAPAN: hanya
+// untuk langkah yang baru saja dimainkan — bukan undo, impor PGN, atau
+// permainan baru, yang sama-sama mengubah riwayat tapi bukan "langkah".
+// ---------------------------------------------------------------------------
+
+/** Dari sudut siapa partai lokal didengar: manusia lawan bot; dua pemain → tidak ada "sendiri". */
+const offlineListener = computed<Color | null>(() =>
+  offline.mode.value === 'lawan-komputer' ? offline.humanColor.value : null
+)
+
+watch(
+  () => offline.history.value.length,
+  (length, previous) => {
+    // Satu atau dua langkah bertambah. Dua: bot menjawab dan premove pemain
+    // langsung dijalankan di tick yang sama (`commit` → `runQueuedPremove`),
+    // jadi watcher melihatnya sekaligus. Undo memendekkan, permainan baru ke
+    // nol, dan impor PGN masuk fase analisis — semuanya diam.
+    const added = length - previous
+    if (isOnline.value || !soundEnabled.value || added < 1 || added > 2) return
+    if (offline.phase.value === 'analysis') return
+    const history = offline.history.value
+    const sounds = history.slice(previous).flatMap((entry, i) =>
+      soundsForMove({
+        move: entry.move,
+        mover: entry.color,
+        // Status hanya diketahui untuk posisi terakhir; langkah sebelumnya
+        // dalam deret ini pasti tidak mengakhiri partai, cukup cek skaknya.
+        status:
+          previous + i === length - 1
+            ? offline.status.value
+            : { over: false, winner: null, check: entry.san.endsWith('+') },
+        me: offlineListener.value
+      })
+    )
+    playSounds(sounds)
+  }
+)
+
+watch(
+  () => offline.phase.value,
+  (phase, previous) => {
+    if (phase === 'playing' && previous === 'setup' && soundEnabled.value && !isOnline.value) {
+      playSounds(['game-start'])
+    }
+  }
+)
+
+onMounted(() => primeAudioOnFirstGesture())
+
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
@@ -841,6 +900,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           v-model:undo-enabled="undoEnabled"
           v-model:show-eval-bar="showEvalBar"
           v-model:show-suggestion="showSuggestion"
+          v-model:sound-enabled="soundEnabled"
         />
       </div>
     </header>

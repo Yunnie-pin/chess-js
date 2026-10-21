@@ -36,3 +36,5 @@ export const premoveEnabled = persistedFlag('premove', true)
 export const undoEnabled = persistedFlag('undo', true)
 export const showEvalBar = persistedFlag('bilah-evaluasi', false)
 export const showSuggestion = persistedFlag('panah-saran', false)
+/** Efek suara langkah, skak, dan akhir partai — bawaan menyala, seperti situs catur umumnya. */
+export const soundEnabled = persistedFlag('suara', true)

@@ -87,6 +87,8 @@ export const id = {
   'controls.undoEnabled': 'Aktifkan batalkan langkah',
   'controls.evalBar': 'Tampilkan bilah evaluasi',
   'controls.suggestionArrow': 'Tampilkan panah saran',
+  'controls.audio': 'Suara',
+  'controls.sound': 'Efek suara',
   /** Diikuti skornya, mis. "Evaluasi: +1,2". */
   'evalBar.ariaLabel': 'Evaluasi: {score}',
   'premove.queued': 'Premove menunggu giliran',

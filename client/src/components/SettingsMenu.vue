@@ -16,6 +16,7 @@ const premoveEnabled = defineModel<boolean>('premoveEnabled', { required: true }
 const undoEnabled = defineModel<boolean>('undoEnabled', { required: true })
 const showEvalBar = defineModel<boolean>('showEvalBar', { required: true })
 const showSuggestion = defineModel<boolean>('showSuggestion', { required: true })
+const soundEnabled = defineModel<boolean>('soundEnabled', { required: true })
 
 const open = ref(false)
 const rootEl = ref<HTMLElement | null>(null)
@@ -102,6 +103,13 @@ onBeforeUnmount(() => {
         <input v-model="showSuggestion" type="checkbox" />
         <span>{{ t('controls.suggestionArrow') }}</span>
       </label>
+
+      <!-- Bukan bantuan bermain — kelompok sendiri, supaya tidak terbaca sebagai "curang". -->
+      <span class="settings__heading settings__heading--gap">{{ t('controls.audio') }}</span>
+      <label class="switch">
+        <input v-model="soundEnabled" type="checkbox" />
+        <span>{{ t('controls.sound') }}</span>
+      </label>
     </div>
   </div>
 </template>
@@ -162,6 +170,12 @@ onBeforeUnmount(() => {
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--text-muted);
+}
+
+.settings__heading--gap {
+  margin-top: 0.35rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
 }
 
 .switch {

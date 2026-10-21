@@ -72,6 +72,8 @@ export const en: Messages = {
   'controls.undoEnabled': 'Enable undo',
   'controls.evalBar': 'Show evaluation bar',
   'controls.suggestionArrow': 'Show suggestion arrow',
+  'controls.audio': 'Audio',
+  'controls.sound': 'Sound effects',
   'evalBar.ariaLabel': 'Evaluation: {score}',
   'premove.queued': 'Premove queued',
   'premove.cancel': 'Cancel',
