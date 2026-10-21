@@ -73,6 +73,8 @@ export const id = {
   'controls.mode': 'Mode',
   'controls.vsComputer': 'Lawan komputer',
   'controls.twoPlayers': 'Dua pemain',
+  'controls.summaryAs': 'Anda {color}',
+  'controls.summaryImported': 'Partai impor',
   'controls.strength': 'Kekuatan lawan',
   'controls.eloNote':
     'Lawannya Stockfish, dan angka Elo di sini adalah UCI_Elo miliknya sendiri — bukan skala bebas. Rentangnya dipatok ke jangkauan yang didukung Stockfish (1320-3190), jadi Pemula pun sudah jauh melampaui pemain rata-rata.',
@@ -190,6 +192,7 @@ export const id = {
   'review.cancel': 'Batal',
   'review.progress': 'Menganalisis… {done}/{total}',
   'review.accuracy': 'Akurasi',
+  'review.clean': 'Tanpa kesalahan',
   'review.class.best': 'Langkah terbaik',
   'review.class.good': 'Bagus',
   'review.class.inaccuracy': 'Kurang akurat',

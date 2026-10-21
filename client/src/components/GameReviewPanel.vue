@@ -46,6 +46,19 @@ const accuracyText = (color: Color): string => {
   return value === null ? '–' : `${value.toFixed(1)}%`
 }
 
+/**
+ * Hitungan yang tampil di kartu: hanya kesalahan, dan hanya yang tidak nol.
+ * Deretan "?? 0 ? 0" cuma bising; ★ pindah ke tooltip akurasi.
+ */
+const mistakesOf = (color: Color) =>
+  SHOWN.filter((item) => item.cls !== 'best').flatMap((item) => {
+    const count = props.review?.counts[color][item.cls] ?? 0
+    return count ? [{ ...item, count }] : []
+  })
+
+const accuracyTitle = (color: Color): string =>
+  `${t('review.accuracy')} · ★ ${props.review?.counts[color].best ?? 0} ${t('review.class.best').toLowerCase()}`
+
 const SYMBOL: Partial<Record<MoveClass, string>> = Object.fromEntries(
   SHOWN.map((item) => [item.cls, item.symbol])
 )
@@ -107,21 +120,24 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
     />
 
     <div v-if="review" class="review__players">
-      <div v-for="color in COLORS" :key="color" class="review__row">
+      <div v-for="color in COLORS" :key="color" class="review__card">
         <span class="review__player">
           <span class="review__dot" :class="`review__dot--${color}`" />
           <span class="review__name" :title="labels[color]">{{ labels[color] }}</span>
         </span>
-        <span class="review__accuracy" :title="t('review.accuracy')">{{ accuracyText(color) }}</span>
+        <span class="review__accuracy" :title="accuracyTitle(color)">{{ accuracyText(color) }}</span>
         <span class="review__counts">
           <span
-            v-for="item in SHOWN"
+            v-for="item in mistakesOf(color)"
             :key="item.cls"
             class="review__count"
-            :class="[`review__count--${item.cls}`, { 'review__count--zero': !review.counts[color][item.cls] }]"
+            :class="`review__count--${item.cls}`"
             :title="t(`review.class.${item.cls}`)"
           >
-            {{ item.symbol }} {{ review.counts[color][item.cls] }}
+            {{ item.symbol }} {{ item.count }}
+          </span>
+          <span v-if="!mistakesOf(color).length" class="review__clean">
+            {{ status === 'running' ? '…' : t('review.clean') }}
           </span>
         </span>
       </div>
@@ -205,19 +221,22 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
   font-variant-numeric: tabular-nums;
 }
 
+/* Dua kartu berdampingan — Putih kiri, Hitam kanan, seperti di papan skor. */
 .review__players {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.45rem;
-  font-size: 0.84rem;
+  font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
 
-/* Nama (boleh terpotong) + akurasi di baris pertama; hitungan di bawahnya, boleh membungkus. */
-.review__row {
+.review__card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.15rem 0.5rem;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--surface-hover);
+  border-radius: 0.45rem;
+  min-width: 0;
 }
 
 .review__player {
@@ -249,29 +268,30 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
   background: var(--piece-dark-small);
 }
 
+/* Angka utama kartu — yang pertama dicari mata. */
 .review__accuracy {
+  font-size: 1.35rem;
   font-weight: 700;
+  line-height: 1.1;
   color: var(--gold-text);
-  text-align: right;
   white-space: nowrap;
 }
 
 .review__counts {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.1rem 0.6rem;
-  padding-left: 1.05rem; /* sejajar dengan nama, melewati titik warna */
-  font-family: var(--font-mono);
+  gap: 0.1rem 0.55rem;
+  min-height: 1.2em;
   font-size: 0.78rem;
 }
 
-.review__count {
-  white-space: nowrap;
+.review__clean {
+  color: var(--text-muted);
 }
 
-.review__count--best {
-  color: var(--accent);
+.review__count {
+  font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 .review__count--inaccuracy {
@@ -284,10 +304,6 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
 
 .review__count--blunder {
   color: var(--danger-text);
-}
-
-.review__count--zero {
-  opacity: 0.35;
 }
 
 /* Garis kiri berwarna membawa label; teksnya tetap warna teks biasa. */

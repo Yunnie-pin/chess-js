@@ -306,6 +306,15 @@ function pgnName(color: Color): string {
   return `${host.value.name} (Stockfish ${offline.elo.value})`
 }
 
+/**
+ * Nama di kartu akurasi: tanpa "(Putih)" — titik warna di kartu sudah
+ * mengatakannya — dan tanpa Elo, supaya muat di setengah lebar panel.
+ */
+function reviewName(color: Color): string {
+  if (vsComputer.value && color !== offline.humanColor.value) return host.value.name
+  return pgnName(color)
+}
+
 async function copyPgn(): Promise<void> {
   const opening = openingName(gameRecord.value.fens)
   const pgn = toPgn({
@@ -907,6 +916,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           {{ online.error.value }}
         </p>
 
+        <!-- Paling atas begitu tersedia: sesudah partai usai, inilah yang dicari. -->
+        <GameReviewPanel
+          v-if="reviewAvailable"
+          ref="reviewPanelRef"
+          :status="gameReview.status.value"
+          :progress="gameReview.progress.value"
+          :review="gameReview.review.value"
+          :labels="{ w: reviewName('w'), b: reviewName('b') }"
+          :scores="gameReview.scores.value"
+          :marks="reviewMarks"
+          :sans="reviewSans"
+          :active-ply="displayPly"
+          @start="gameReview.start"
+          @cancel="gameReview.cancel"
+          @jump="jumpView"
+        />
+
         <template v-if="isOnline">
           <OnlineLobby
             v-if="!online.inRoom.value"
@@ -948,22 +974,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         />
 
         <PgnImport v-if="!isOnline" @load="loadImportedGame" />
-
-        <GameReviewPanel
-          v-if="reviewAvailable"
-          ref="reviewPanelRef"
-          :status="gameReview.status.value"
-          :progress="gameReview.progress.value"
-          :review="gameReview.review.value"
-          :labels="{ w: playerLabel('w'), b: playerLabel('b') }"
-          :scores="gameReview.scores.value"
-          :marks="reviewMarks"
-          :sans="reviewSans"
-          :active-ply="displayPly"
-          @start="gameReview.start"
-          @cancel="gameReview.cancel"
-          @jump="jumpView"
-        />
 
         <footer class="meta">
           <p v-if="vsComputer" class="meta__line">

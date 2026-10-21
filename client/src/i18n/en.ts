@@ -58,6 +58,8 @@ export const en: Messages = {
   'controls.mode': 'Mode',
   'controls.vsComputer': 'Vs computer',
   'controls.twoPlayers': 'Two players',
+  'controls.summaryAs': 'you play {color}',
+  'controls.summaryImported': 'Imported game',
   'controls.strength': 'Opponent strength',
   'controls.eloNote':
     "The opponent is Stockfish, and these Elo numbers are its own UCI_Elo — not a free-floating scale. The range is pinned to what Stockfish itself supports (1320-3190), so even Beginner is well past average human play.",
@@ -158,6 +160,7 @@ export const en: Messages = {
   'review.cancel': 'Cancel',
   'review.progress': 'Analysing… {done}/{total}',
   'review.accuracy': 'Accuracy',
+  'review.clean': 'No mistakes',
   'review.class.best': 'Best move',
   'review.class.good': 'Good',
   'review.class.inaccuracy': 'Inaccuracy',
