@@ -148,6 +148,7 @@ export const en: Messages = {
   'meta.searchInfo': 'depth {depth} · {nodes} nodes · {ms} ms',
   'meta.shortcuts': 'Shortcuts:',
   'meta.keyBrowse': 'browse moves',
+  'meta.keyMoment': 'jump between mistakes',
   'meta.keyFlip': 'flip board',
   'meta.keyDeselect': 'clear selection',
 

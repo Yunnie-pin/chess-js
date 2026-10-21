@@ -5,6 +5,7 @@ import ChessPiece from './ChessPiece.vue'
 import { FILES, colorOf, fileOf, isLightSquare, rankOf } from '@chess/shared/chess'
 import { arrowOutline, markRing } from './arrowGeometry.ts'
 import { useI18n } from '../i18n/index.ts'
+import type { MoveClass } from '../engine/moveClassify.ts'
 import type { Color, Move, Piece, Square } from '@chess/shared/types'
 
 const { t } = useI18n()
@@ -53,7 +54,22 @@ const props = defineProps<{
   showHints: boolean
   /** Panah saran mesin, terurut dari terbaik (MultiPV). Kosong bila tidak ditampilkan. */
   suggestions: { from: Square; to: Square }[]
+  /** Label ulasan langkah yang sedang tampil, ditempel di petak tujuannya. */
+  moveBadge?: { square: Square; cls: MoveClass } | null
 }>()
+
+/**
+ * Simbol badge di papan. Beda dari daftar langkah, di sini 'best' dan 'good'
+ * ikut bersimbol: hanya ada SATU badge di papan pada satu waktu, jadi tidak
+ * ada tumpukan ★ yang menenggelamkan ??.
+ */
+const BADGE_SYMBOL: Record<MoveClass, string> = {
+  best: '★',
+  good: '✓',
+  inaccuracy: '?!',
+  mistake: '?',
+  blunder: '??'
+}
 
 const emit = defineEmits<{
   activate: [square: Square]
@@ -339,6 +355,15 @@ const dragStyle = computed(() => {
           :piece="props.board[square]!"
           :class="{ 'piece--ghost': drag?.moved && drag.from === square }"
         />
+
+        <span
+          v-if="props.moveBadge && props.moveBadge.square === square"
+          class="move-badge"
+          :class="`move-badge--${props.moveBadge.cls}`"
+          role="img"
+          :aria-label="t(`review.class.${props.moveBadge.cls}`)"
+          :title="t(`review.class.${props.moveBadge.cls}`)"
+        >{{ BADGE_SYMBOL[props.moveBadge.cls] }}</span>
       </div>
 
       <!--
@@ -584,6 +609,69 @@ const dragStyle = computed(() => {
 
 .piece--ghost {
   opacity: 0.28;
+}
+
+/*
+ * Badge label ulasan, ala papan ulasan Chess.com — tapi di DALAM sudut petak,
+ * bukan menjorok keluar: `.board` memakai `overflow: hidden` (sudut membulat),
+ * jadi badge di kolom h / baris 8 akan terpotong. Satuannya `em` dari
+ * font-size petak (12.5cqw), jadi menskala bersama bidak. Di atas bidak
+ * (z-index 6) — badge harus terbaca walau menimpa kepala bidak.
+ */
+.move-badge {
+  position: absolute;
+  top: 3%;
+  right: 3%;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  /* font-size dulu (0.17 × petak), lalu ukuran lingkaran dalam em-nya sendiri: ±40% petak. */
+  font-size: 0.17em;
+  width: 2.3em;
+  height: 2.3em;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  letter-spacing: -0.08em;
+  color: #fff;
+  border: 0.14em solid rgb(255 255 255 / 0.9);
+  box-shadow: 0 0.15em 0.5em rgb(0 0 0 / 0.45);
+  pointer-events: none;
+  animation: move-badge-pop 0.18s ease-out;
+}
+
+/* Hijau 'best' = hijau panah saran mesin: keduanya berarti "pilihan mesin". */
+.move-badge--best {
+  background: #3aa655;
+}
+
+.move-badge--good {
+  background: #6f8f5a;
+}
+
+.move-badge--inaccuracy {
+  background: #4f9fd4;
+}
+
+.move-badge--mistake {
+  background: #e8853f;
+}
+
+.move-badge--blunder {
+  background: #d9483b;
+}
+
+@keyframes move-badge-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .move-badge {
+    animation: none;
+  }
 }
 
 .drag-layer {

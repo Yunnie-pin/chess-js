@@ -25,11 +25,13 @@ const props = defineProps<{
 }>()
 
 /**
- * Simbol anotasi catur yang lazim. 'good' sengaja tanpa simbol — kalau setiap
- * langkah wajar diberi tanda, tanda yang penting justru tenggelam.
+ * Simbol anotasi catur yang lazim — hanya untuk kesalahan. 'good' dan 'best'
+ * sengaja tanpa simbol: di partai yang wajar sebagian besar langkah adalah
+ * langkah terbaik mesin, dan ★ di hampir setiap baris membuat ?? yang penting
+ * justru tenggelam. Jumlah ★ tetap ada di kartu akurasi dan tooltip grafik.
  */
 const MARK_SYMBOL: Record<MoveClass, string> = {
-  best: '★',
+  best: '',
   good: '',
   inaccuracy: '?!',
   mistake: '?',
@@ -274,11 +276,6 @@ watch(
 }
 
 /* Warna mengikuti kebiasaan papan ulasan: biru → oranye → merah, makin parah. */
-.history__mark--best {
-  color: var(--accent);
-  font-size: 0.8em;
-}
-
 .history__mark--inaccuracy {
   color: var(--sky-text);
 }

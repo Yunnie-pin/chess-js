@@ -22,6 +22,7 @@ import { useOnlineGame } from './composables/useOnlineGame.ts'
 import { useGameReview } from './composables/useGameReview.ts'
 import { replayMoves, toPgn, type GameRecord, type PgnParseResult, type PgnResult } from './engine/gameRecord.ts'
 import { openingName } from './engine/openings.ts'
+import { nearestMoment, type MoveClass } from './engine/moveClassify.ts'
 import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
@@ -368,6 +369,31 @@ const shownEvaluation = computed<Evaluation | null>(() => {
   return cached ?? live
 })
 
+/**
+ * Langkah terbaik di posisi SEBELUM langkah yang sedang tampil, bila langkah
+ * itu diberi label ?!, ?, atau ??. Digambar di papan sesudah langkahnya —
+ * sorotan langkah terakhir menunjukkan apa yang dimainkan, panahnya apa yang
+ * seharusnya. Tidak ikut sakelar panah saran: pemain sendiri yang meminta ulasan.
+ */
+const reviewBetterMove = computed<{ from: Square; to: Square } | null>(() => {
+  const ply = displayPly.value
+  const mark = ply > 0 ? reviewMarks.value[ply - 1] : null
+  if (!mark || mark === 'best' || mark === 'good') return null
+  return gameReview.scores.value[ply - 1]?.moves[0] ?? null
+})
+
+/**
+ * Badge label ulasan di papan: langkah yang sedang tampil (ply `displayPly`),
+ * ditempel di petak tujuannya — `lastMove` sudah mengikuti penelusuran, dan
+ * untuk rokade itu petak raja. Kosong sebelum ulasan berjalan.
+ */
+const boardMoveBadge = computed<{ square: Square; cls: MoveClass } | null>(() => {
+  const ply = displayPly.value
+  const cls = ply > 0 ? reviewMarks.value[ply - 1] : null
+  const to = lastMove.value?.to
+  return cls && to !== undefined ? { square: to, cls } : null
+})
+
 /** Kedalaman minimal sebelum panah saran ditampilkan — supaya tidak lompat-lompat sebelum mengendap. */
 const SUGGESTION_MIN_DEPTH = 6
 
@@ -382,11 +408,15 @@ const SUGGESTION_MIN_DEPTH = 6
  * lawan menjawab) atau kedalamannya belum cukup.
  */
 const suggestionArrows = computed<{ from: Square; to: Square }[]>(() => {
+  // Ulasan berbicara lebih dulu: di langkah yang salah, satu-satunya panah
+  // adalah langkah yang seharusnya — pasangan visual kartu "Lebih baik: …".
+  if (reviewBetterMove.value) return [reviewBetterMove.value]
   if (!suggestionEnabled.value) return []
   if (isLive.value && canPlay.value === null && !analysing.value) return []
   const result = shownEvaluation.value
   if (!result || result.fen !== analysedFen.value || result.depth < SUGGESTION_MIN_DEPTH) return []
-  return result.moves
+  // Selama ulasan, papan dibuat setenang mungkin: satu panah saja, bukan tiga.
+  return gameReview.status.value === 'idle' ? result.moves : result.moves.slice(0, 1)
 })
 
 const premoveColor = computed<Color | null>(() =>
@@ -582,6 +612,17 @@ watch([plyCount, appMode], () => (overlayDismissed.value = false))
  * Hanya di posisi LIVE: lapisan itu bercerita tentang posisi terakhir partai.
  * Menelusuri riwayat — inti dari mengulas — tidak boleh tertutup olehnya.
  */
+/**
+ * Badge "giliran" di papan nama hanya bermakna selama partai berjalan dan yang
+ * tampil adalah posisi sekarang. Saat menelusuri riwayat, sesudah partai usai,
+ * atau di partai impor, ia cuma menunjuk giliran di posisi lama — dan terbaca
+ * seolah partainya masih menunggu seseorang.
+ */
+const turnBadgeVisible = computed(() => {
+  if (!isLive.value || analysing.value) return false
+  return isOnline.value ? !onlineOver.value : !offline.status.value.over
+})
+
 const statusOverlayVisible = computed(
   () =>
     (statusTone.value === 'win' || statusTone.value === 'draw') &&
@@ -732,6 +773,14 @@ function onKeydown(event: KeyboardEvent): void {
     cancelPremove()
     viewPly.value = null
     clearBoardAnnotations()
+  } else if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+    // Shift+panah = lompat antar kesalahan (sama dengan tombol di panel ulasan).
+    // Tanpa ulasan, tetap jatuh ke langkah biasa supaya tombolnya tidak "mati".
+    event.preventDefault()
+    const direction = event.key === 'ArrowLeft' ? -1 : 1
+    const ply = nearestMoment(reviewMarks.value, displayPly.value, direction)
+    if (ply !== null) jumpView(ply)
+    else if (!reviewMarks.value.length) stepView(direction)
   } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
     // Menelusuri riwayat, bukan membatalkan langkah — berlaku di kedua mode,
     // karena murni tampilan dan tidak menyentuh permainan yang sebenarnya.
@@ -803,7 +852,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <OpponentFace v-if="topFace" :opponent="topFace" />
             <span class="player__dot" :class="`player__dot--${topColor}`" />
             <span class="player__name">{{ playerLabel(topColor) }}</span>
-            <span v-if="turn === topColor" class="player__turn" :class="{ 'player__turn--thinking': isThinking(topColor) }">
+            <span v-if="turnBadgeVisible && turn === topColor" class="player__turn" :class="{ 'player__turn--thinking': isThinking(topColor) }">
               <span v-if="isThinking(topColor)" class="status__spinner" aria-hidden="true" />
               {{ isThinking(topColor) ? t('player.thinkingBadge') : t('player.turnBadge') }}
             </span>
@@ -833,6 +882,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               :premove-failed="premoveFailed"
               :show-hints="showHints"
               :suggestions="suggestionArrows"
+              :move-badge="boardMoveBadge"
               @activate="activateSquare"
               @drop="dropPiece"
               @right-click="cancelPremove"
@@ -871,7 +921,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <OpponentFace v-if="bottomFace" :opponent="bottomFace" />
             <span class="player__dot" :class="`player__dot--${bottomColor}`" />
             <span class="player__name">{{ playerLabel(bottomColor) }}</span>
-            <span v-if="turn === bottomColor" class="player__turn" :class="{ 'player__turn--thinking': isThinking(bottomColor) }">
+            <span v-if="turnBadgeVisible && turn === bottomColor" class="player__turn" :class="{ 'player__turn--thinking': isThinking(bottomColor) }">
               <span v-if="isThinking(bottomColor)" class="status__spinner" aria-hidden="true" />
               {{ isThinking(bottomColor) ? t('player.thinkingBadge') : t('player.turnBadge') }}
             </span>
@@ -928,9 +978,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :marks="reviewMarks"
           :sans="reviewSans"
           :active-ply="displayPly"
+          :pgn-feedback="pgnFeedback"
           @start="gameReview.start"
           @cancel="gameReview.cancel"
           @jump="jumpView"
+          @copy-pgn="copyPgn"
         />
 
         <template v-if="isOnline">
@@ -986,6 +1038,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <p class="meta__line meta__keys">
             {{ t('meta.shortcuts') }}
             <kbd>←</kbd><kbd>→</kbd> {{ t('meta.keyBrowse') }} ·
+            <template v-if="reviewMarks.length">
+              <kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> {{ t('meta.keyMoment') }} ·
+            </template>
             <kbd>F</kbd> {{ t('meta.keyFlip') }} · <kbd>Esc</kbd> {{ t('meta.keyDeselect') }}
           </p>
         </footer>

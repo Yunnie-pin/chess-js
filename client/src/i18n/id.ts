@@ -178,6 +178,7 @@ export const id = {
   'meta.searchInfo': 'kedalaman {depth} · {nodes} simpul · {ms} ms',
   'meta.shortcuts': 'Pintasan:',
   'meta.keyBrowse': 'lihat langkah',
+  'meta.keyMoment': 'lompat ke kesalahan',
   'meta.keyFlip': 'putar papan',
   'meta.keyDeselect': 'batal pilih',
 

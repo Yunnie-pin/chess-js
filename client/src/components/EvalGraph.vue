@@ -144,6 +144,10 @@ const tooltip = computed(() => {
       />
     </svg>
 
+    <!-- Siapa di atas, siapa di bawah — grafik tanpa ini harus ditebak. -->
+    <span class="graph__side graph__side--top" aria-hidden="true">{{ t('color.b') }}</span>
+    <span class="graph__side graph__side--bottom" aria-hidden="true">{{ t('color.w') }}</span>
+
     <div v-if="tooltip" class="graph__tip" :style="{ left: `${tooltip.left}%` }">
       <span class="graph__tip-move">{{ tooltip.move }}</span>
       <span class="graph__tip-eval">{{ tooltip.evaluation }}</span>
@@ -219,6 +223,30 @@ const tooltip = computed(() => {
 
 .graph__dot--blunder {
   fill: var(--danger);
+}
+
+/* Chip berlatar permukaan: terbaca di atas area terang maupun gelap. */
+.graph__side {
+  position: absolute;
+  left: 0.3rem;
+  padding: 0 0.3rem;
+  font-size: 0.6rem;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  pointer-events: none;
+}
+
+.graph__side--top {
+  top: 0.3rem;
+}
+
+.graph__side--bottom {
+  bottom: 0.3rem;
 }
 
 .graph__tip {

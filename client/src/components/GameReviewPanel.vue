@@ -22,9 +22,11 @@ const props = defineProps<{
   marks: readonly (MoveClass | null)[]
   sans: readonly string[]
   activePly: number
+  /** Hasil terakhir menyalin PGN — sama dengan tombol di daftar langkah. */
+  pgnFeedback: 'copied' | 'failed' | null
 }>()
 
-const emit = defineEmits<{ start: []; cancel: []; jump: [ply: number] }>()
+const emit = defineEmits<{ start: []; cancel: []; jump: [ply: number]; copyPgn: [] }>()
 
 const COLORS: Color[] = ['w', 'b']
 
@@ -91,7 +93,19 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
 
 <template>
   <section class="review">
-    <h2 class="field__label">{{ t('review.title') }}</h2>
+    <div class="review__head">
+      <h2 class="field__label">{{ t('review.title') }}</h2>
+      <!-- Ulasan adalah saat orang biasanya ingin membagikan partainya. -->
+      <button
+        type="button"
+        class="review__pgn"
+        :class="pgnFeedback ? `review__pgn--${pgnFeedback}` : null"
+        :title="t('history.copyPgnHint')"
+        @click="emit('copyPgn')"
+      >
+        {{ pgnFeedback === 'copied' ? t('history.pgnCopied') : pgnFeedback === 'failed' ? t('history.pgnFailed') : t('history.copyPgn') }}
+      </button>
+    </div>
 
     <template v-if="status === 'idle'">
       <p class="review__hint">{{ t('review.hint') }}</p>
@@ -186,6 +200,40 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
 .review h2 {
   margin: 0;
   font-weight: inherit;
+}
+
+.review__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.review__pgn {
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.72rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.review__pgn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.review__pgn--copied {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.review__pgn--failed {
+  color: var(--danger-text);
+  border-color: var(--danger-line);
 }
 
 .review__hint {

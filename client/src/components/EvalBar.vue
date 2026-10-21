@@ -23,10 +23,16 @@ const { t } = useI18n()
 const share = computed(() => whiteShare(props.evaluation))
 const label = computed(() => formatEval(props.evaluation))
 
-/** Angka menempel di ujung Putih: bawah saat main Putih, atas saat papan diputar. */
+/** Ujung Putih di bawah saat main Putih, di atas saat papan diputar. */
 const flipped = computed(() => props.orientation === 'b')
-/** Ujung Putih sedang terisi warna terang? kalau ya, teksnya gelap biar terbaca. */
-const labelOnLight = computed(() => share.value > 0.12)
+/**
+ * Angka menempel di ujung pihak yang UNGGUL (imbang → ujung Putih). Ujung itu
+ * selalu terisi warna pihaknya sendiri lebih dari separuh, jadi teks gelap di
+ * ujung Putih dan teks terang di ujung Hitam selalu kontras — tidak perlu
+ * menebak ambang seperti dulu, dan mata langsung tahu siapa yang di depan.
+ */
+const atWhiteEnd = computed(() => share.value >= 0.5)
+const labelEdge = computed(() => (atWhiteEnd.value !== flipped.value ? 'bottom' : 'top'))
 </script>
 
 <template>
@@ -39,7 +45,11 @@ const labelOnLight = computed(() => share.value > 0.12)
     <div class="evalbar__white" :style="{ height: `${share * 100}%` }" />
     <span
       class="evalbar__score"
-      :class="labelOnLight ? 'evalbar__score--dark' : 'evalbar__score--light'"
+      :class="[
+        `evalbar__score--${labelEdge}`,
+        atWhiteEnd ? 'evalbar__score--dark' : 'evalbar__score--light',
+        { 'evalbar__score--long': label.length >= 5 }
+      ]"
     >
       {{ label }}
     </span>
@@ -70,19 +80,32 @@ const labelOnLight = computed(() => share.value > 0.12)
   inset: 0 0 auto 0;
 }
 
+/* Lebar bilah (1.5rem) dipakai App.vue untuk menggeser kolom papan — jadi
+   yang dinaikkan ukuran hurufnya, bukan lebarnya; spasi huruf dirapatkan
+   supaya "+10.5" tetap muat. */
 .evalbar__score {
   position: absolute;
-  inset: auto 0 0.2rem 0;
+  left: 0;
+  right: 0;
   text-align: center;
-  font-size: 0.58rem;
+  font-size: 0.64rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.05em;
   pointer-events: none;
 }
 
-.evalbar--flip .evalbar__score {
-  inset: 0.2rem 0 auto 0;
+/* "+10.5", "-12.3": lima karakter tak muat di 1.5rem pada ukuran normal. */
+.evalbar__score--long {
+  font-size: 0.54rem;
+}
+
+.evalbar__score--bottom {
+  bottom: 0.25rem;
+}
+
+.evalbar__score--top {
+  top: 0.25rem;
 }
 
 .evalbar__score--dark {
