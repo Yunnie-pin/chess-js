@@ -25,6 +25,7 @@ export const en: Messages = {
   'piece.ariaLabel': '{color} {piece}',
 
   'status.notStarted': 'Set your opponent and colour, then press "Start"',
+  'status.analysis': 'Imported game ({result}) — browse and review',
   'status.noRoom': 'Not in a room yet',
   'status.waitingOpponent': 'Waiting for an opponent to join…',
   'status.resigned': '{loser} resigned — {winner} wins',
@@ -121,6 +122,19 @@ export const en: Messages = {
 
   'history.title': 'Moves',
   'history.empty': 'No moves yet.',
+  'history.copyPgn': 'Copy PGN',
+  'history.copyPgnHint': 'Copy the game as PGN — paste it into Lichess, Chess.com, etc.',
+  'history.pgnCopied': 'Copied',
+  'history.pgnFailed': 'Copy failed',
+
+  'import.open': 'Import PGN',
+  'import.label': 'Paste a single-game PGN',
+  'import.placeholder': '[White "…"]\n[Black "…"]\n\n1. e4 e5 2. Nf3 …',
+  'import.load': 'Load game',
+  'import.cancel': 'Cancel',
+  'import.error.empty': 'No moves could be read.',
+  'import.error.illegal': 'Move {ply} ("{san}") is not legal in its position.',
+  'import.error.custom-start': 'PGNs from a custom starting position (FEN tag) are not supported yet.',
 
   'promotion.title': 'Pawn promotion',
   'promotion.hint': 'Choose a replacement piece.',

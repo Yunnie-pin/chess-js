@@ -35,8 +35,12 @@ export type GameMode = 'dua-pemain' | 'lawan-komputer'
  *               diganti; tidak ada satu bidak pun yang bergerak.
  * - `playing` — pertandingan berjalan; susunan terkunci.
  * - `finished`— permainan usai (skakmat/remis); menunggu "Permainan baru".
+ * - `analysis`— partai hasil impor PGN: hanya untuk ditelusuri dan diulas.
+ *               Papan read-only, mesin tidak pernah jalan, undo dimatikan —
+ *               bukan `finished`, karena partai impor belum tentu berakhir di
+ *               papan (bisa menyerah, waktu habis, atau memang terpotong).
  */
-export type GamePhase = 'setup' | 'playing' | 'finished'
+export type GamePhase = 'setup' | 'playing' | 'finished' | 'analysis'
 
 export interface PendingPromotion {
   from: Square
@@ -493,7 +497,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
   // ------------------------------------------------------------------
 
   function undo(): void {
-    if (!undoEnabled.value || !history.value.length) return
+    if (!undoEnabled.value || !history.value.length || phase.value === 'analysis') return
     invalidateSearch()
     cancelPremove()
 
@@ -545,6 +549,37 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     if (phase.value !== 'setup') return
     phase.value = 'playing'
     scheduleAi()
+  }
+
+  /**
+   * Muat partai jadi (hasil impor PGN, dari posisi awal) ke fase `analysis`.
+   * Langkahnya dijalankan ulang di posisi milik composable ini, jadi riwayat,
+   * FEN per langkah, dan SAN-nya sama persis bentuknya dengan partai yang
+   * dimainkan sendiri. Langkah yang tidak legal menghentikan pemuatan di situ —
+   * pemanggil (parser PGN) sudah memeriksanya, ini cuma jaring pengaman.
+   */
+  function importGame(moves: readonly Move[]): void {
+    loadPosition(START_FEN)
+    for (const move of moves) {
+      const legal = position.legalMoves()
+      const match = legal.find(
+        (m) => m.from === move.from && m.to === move.to && m.promotion === move.promotion
+      )
+      if (!match) break
+      const entry: HistoryEntry = {
+        move: match,
+        san: position.toSAN(match, legal),
+        fen: '',
+        moveNumber: position.fullmove,
+        color: position.turn
+      }
+      position.makeMove(match)
+      entry.fen = position.fen()
+      history.value.push(entry)
+    }
+    lastMove.value = history.value[history.value.length - 1]?.move ?? null
+    phase.value = 'analysis'
+    bump()
   }
 
   /**
@@ -722,6 +757,7 @@ export function useChessGame(options: UseChessGameOptions = {}) {
     undo,
     reset,
     newGame,
+    importGame,
     startGame,
     flipBoard,
     playAs,

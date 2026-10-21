@@ -18,6 +18,10 @@ const props = defineProps<{
   activePly: number
   /** Label ulasan per ply (indeks 0 = ply 1); kosong selama partai belum diulas. */
   marks?: readonly (MoveClass | null)[]
+  /** Nama pembukaan sampai posisi yang tampil, atau null bila belum dikenali. */
+  opening?: string | null
+  /** Hasil terakhir menyalin PGN, untuk umpan balik di tombolnya. */
+  pgnFeedback?: 'copied' | 'failed' | null
 }>()
 
 /**
@@ -37,7 +41,7 @@ const markOf = (ply: number): MoveClass | null => {
   return mark && MARK_SYMBOL[mark] ? mark : null
 }
 
-const emit = defineEmits<{ jump: [ply: number] }>()
+const emit = defineEmits<{ jump: [ply: number]; copyPgn: [] }>()
 
 const listEl = ref<HTMLElement | null>(null)
 
@@ -88,7 +92,20 @@ watch(
 
 <template>
   <section class="history">
-    <h2 class="history__title">{{ t('history.title') }}</h2>
+    <div class="history__head">
+      <h2 class="history__title">{{ t('history.title') }}</h2>
+      <button
+        v-if="rows.length"
+        type="button"
+        class="history__pgn"
+        :class="pgnFeedback ? `history__pgn--${pgnFeedback}` : null"
+        :title="t('history.copyPgnHint')"
+        @click="emit('copyPgn')"
+      >
+        {{ pgnFeedback === 'copied' ? t('history.pgnCopied') : pgnFeedback === 'failed' ? t('history.pgnFailed') : t('history.copyPgn') }}
+      </button>
+    </div>
+    <p v-if="opening" class="history__opening">{{ opening }}</p>
     <div ref="listEl" class="history__scroll">
       <p v-if="!rows.length" class="history__empty">{{ t('history.empty') }}</p>
       <table v-else class="history__table">
@@ -144,8 +161,50 @@ watch(
   flex-direction: column;
 }
 
+.history__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.history__pgn {
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.72rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.history__pgn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.history__pgn--copied {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.history__pgn--failed {
+  color: var(--danger-text);
+  border-color: var(--danger-line);
+}
+
+.history__opening {
+  margin: -0.35rem 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .history__title {
-  margin: 0 0 0.6rem;
+  margin: 0;
   font-size: 0.72rem;
   letter-spacing: 0.09em;
   text-transform: uppercase;

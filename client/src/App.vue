@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, watchEffect } from 'vue'
 
 import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
 import EvalBar from './components/EvalBar.vue'
 import GameControls from './components/GameControls.vue'
 import GameReviewPanel from './components/GameReviewPanel.vue'
+import PgnImport from './components/PgnImport.vue'
 import LanguageSwitch from './components/LanguageSwitch.vue'
 import SettingsMenu from './components/SettingsMenu.vue'
 import MoveHistory from './components/MoveHistory.vue'
@@ -19,6 +20,8 @@ import RoomPanel from './components/RoomPanel.vue'
 import { useChessGame } from './composables/useChessGame.ts'
 import { useOnlineGame } from './composables/useOnlineGame.ts'
 import { useGameReview } from './composables/useGameReview.ts'
+import { replayMoves, toPgn, type GameRecord, type PgnParseResult, type PgnResult } from './engine/gameRecord.ts'
+import { openingName } from './engine/openings.ts'
 import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
@@ -54,11 +57,20 @@ const isOnline = computed(() => appMode.value === 'online')
  * mode online tidak punya lawan mesin, jadi memilihkan wajah untuk keduanya
  * hanya akan menipu.
  */
-const host = computed(() =>
-  !isOnline.value && offline.mode.value === 'lawan-komputer'
-    ? opponentFor(offline.elo.value)
-    : HOST
+/** Partai hasil impor PGN sedang dibuka — bukan partai melawan siapa pun di sini. */
+const analysing = computed(() => !isOnline.value && offline.phase.value === 'analysis')
+/**
+ * Benar-benar melawan mesin sekarang. Mode 'lawan-komputer' saja tidak cukup:
+ * partai impor tetap membawa mode terakhir, tapi lawannya bukan karakter itu.
+ */
+const vsComputer = computed(
+  () => !isOnline.value && offline.mode.value === 'lawan-komputer' && !analysing.value
 )
+
+/** Tag PGN partai impor — nama pemain dan hasil — selama fase analisis. */
+const importedGame = shallowRef<{ tags: Record<string, string>; result: PgnResult } | null>(null)
+
+const host = computed(() => (vsComputer.value ? opponentFor(offline.elo.value) : HOST))
 
 // Warna aksen, papan, dan pendar halaman ikut karakter yang sedang menemani.
 watchEffect(() => applyTheme(host.value.theme))
@@ -194,10 +206,8 @@ const canPlay = computed<Color | null>(() =>
 // bot, jadi keduanya jujur.
 // ---------------------------------------------------------------------------
 
-/** Bilah evaluasi: hanya lawan komputer, dan hanya bila sakelarnya sendiri menyala. */
-const evalBarVisible = computed(
-  () => showEvalBar.value && !isOnline.value && offline.mode.value === 'lawan-komputer'
-)
+/** Bilah evaluasi: lawan komputer atau partai impor, dan hanya bila sakelarnya sendiri menyala. */
+const evalBarVisible = computed(() => showEvalBar.value && (vsComputer.value || analysing.value))
 /** Panah saran: lawan komputer ATAU dua pemain (tidak online). */
 const suggestionEnabled = computed(() => showSuggestion.value && !isOnline.value)
 /** Worker analisis jalan bila salah satu fitur memerlukannya. */
@@ -216,29 +226,107 @@ const analysedFen = computed(() => viewedPosition.value?.fen() ?? offline.fen.va
  */
 const analysisFen = computed<string | null>(() => {
   if (!analysisActive.value) return null
-  if (!evalBarVisible.value && isLive.value && canPlay.value === null) return null
+  // Partai impor tidak punya "giliran lawan" — posisi live-nya pun bahan analisis.
+  if (!evalBarVisible.value && isLive.value && canPlay.value === null && !analysing.value) return null
   return analysedFen.value
 })
 
 const evaluation = ref<Evaluation | null>(null)
 
 // ---------------------------------------------------------------------------
-// Ulasan pasca-partai — hanya offline untuk saat ini. Online sengaja belum:
-// selama partai berjalan analisis di sana sama dengan curang, dan membukanya
-// sesudah partai selesai butuh gerbang tersendiri.
+// Catatan partai + ulasan pasca-partai. Offline dan online memakai bentuk
+// catatan yang sama; bedanya hanya KAPAN ulasan boleh dibuka.
 // ---------------------------------------------------------------------------
 
-/** Posisi partai offline: indeks 0 = posisi awal, indeks i = sesudah i ply. */
-const reviewFens = computed(() => [START_FEN, ...offline.history.value.map((entry) => entry.fen)])
-const reviewMoves = computed(() => offline.history.value.map((entry) => entry.move))
+/**
+ * Partai yang sedang tampil: FEN tiap posisi, langkah, SAN. Offline sudah
+ * menyimpan FEN per langkah; online cuma punya from/to/promotion dari server,
+ * jadi dimainkan ulang dari posisi awal.
+ */
+const gameRecord = computed<GameRecord>(() => {
+  if (isOnline.value) return replayMoves((online.roomState.value?.history ?? []).map((entry) => entry.move))
+  const history = offline.history.value
+  return {
+    fens: [START_FEN, ...history.map((entry) => entry.fen)],
+    moves: history.map((entry) => entry.move),
+    sans: history.map((entry) => entry.san)
+  }
+})
+const reviewFens = computed(() => gameRecord.value.fens)
+const reviewMoves = computed(() => gameRecord.value.moves)
+const reviewSans = computed(() => gameRecord.value.sans)
 const gameReview = useGameReview(reviewFens, reviewMoves)
 
-/** Tombol ulasan muncul begitu partai offline usai; label langkah tetap ada selama riwayatnya sama. */
-const reviewAvailable = computed(() => !isOnline.value && offline.phase.value === 'finished')
-const reviewSans = computed(() => offline.history.value.map((entry) => entry.san))
-const reviewMarks = computed(() =>
-  isOnline.value ? [] : (gameReview.review.value?.plies.map((ply) => ply?.cls ?? null) ?? [])
+/** Partai online sudah usai — mat/remis di papan, atau salah satu menyerah. */
+const onlineOver = computed(
+  () => !!online.roomState.value?.resignedBy || !!online.gameStatus.value?.over
 )
+
+/**
+ * Tombol ulasan muncul hanya sesudah partai usai. Untuk online ini bukan
+ * sekadar kerapian: membuka mesin selagi partai berjalan sama saja dengan
+ * curang, jadi gerbangnya di sini — sama dengan bilah evaluasi dan panah
+ * saran yang memang tidak pernah menyala di mode online.
+ */
+const reviewAvailable = computed(() =>
+  isOnline.value
+    ? onlineOver.value
+    : offline.phase.value === 'finished' || offline.phase.value === 'analysis'
+)
+const reviewMarks = computed(() => gameReview.review.value?.plies.map((ply) => ply?.cls ?? null) ?? [])
+
+/** Nama pembukaan sampai posisi yang sedang tampil — ikut berubah saat menelusuri riwayat. */
+const openingLabel = computed(() => openingName(gameRecord.value.fens.slice(0, displayPly.value + 1)))
+
+/** Hasil dalam notasi PGN; '*' selama partai belum usai. */
+const pgnResult = computed<PgnResult>(() => {
+  if (analysing.value) return importedGame.value?.result ?? '*'
+  if (!isOnline.value) return offline.status.value.result
+  const resigned = online.roomState.value?.resignedBy
+  if (resigned) return resigned === 'w' ? '0-1' : '1-0'
+  return online.gameStatus.value?.result ?? '*'
+})
+
+/** Umpan balik singkat sesudah PGN disalin: 'copied', 'failed', atau null. */
+const pgnFeedback = ref<'copied' | 'failed' | null>(null)
+let pgnFeedbackTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Nama pemain untuk tag PGN — polos, tanpa "(Anda)" atau "— terputus" yang
+ * dipakai `playerLabel` di layar. Sisi mesin dicatat dengan Elo-nya, seperti
+ * kebiasaan PGN dari partai lawan komputer.
+ */
+function pgnName(color: Color): string {
+  if (isOnline.value) {
+    return online.roomState.value?.players.find((entry) => entry.seat === color)?.name ?? '?'
+  }
+  if (analysing.value) return importedName(color) ?? '?'
+  if (offline.mode.value === 'dua-pemain') return colorName(color)
+  if (color === offline.humanColor.value) return t('player.you')
+  return `${host.value.name} (Stockfish ${offline.elo.value})`
+}
+
+async function copyPgn(): Promise<void> {
+  const opening = openingName(gameRecord.value.fens)
+  const pgn = toPgn({
+    sans: gameRecord.value.sans,
+    result: pgnResult.value,
+    white: pgnName('w'),
+    black: pgnName('b'),
+    date: new Date(),
+    event: 'Chess with Mari',
+    extraTags: opening ? { Opening: opening } : {}
+  })
+  try {
+    await navigator.clipboard.writeText(pgn)
+    pgnFeedback.value = 'copied'
+  } catch {
+    // Clipboard ditolak (izin, konteks tidak aman, dsb.) — katakan terus terang.
+    pgnFeedback.value = 'failed'
+  }
+  if (pgnFeedbackTimer) clearTimeout(pgnFeedbackTimer)
+  pgnFeedbackTimer = setTimeout(() => (pgnFeedback.value = null), 2000)
+}
 
 watch(
   analysisFen,
@@ -286,7 +374,7 @@ const SUGGESTION_MIN_DEPTH = 6
  */
 const suggestionArrows = computed<{ from: Square; to: Square }[]>(() => {
   if (!suggestionEnabled.value) return []
-  if (isLive.value && canPlay.value === null) return []
+  if (isLive.value && canPlay.value === null && !analysing.value) return []
   const result = shownEvaluation.value
   if (!result || result.fen !== analysedFen.value || result.depth < SUGGESTION_MIN_DEPTH) return []
   return result.moves
@@ -375,6 +463,14 @@ function jumpView(ply: number): void {
   clearBoardAnnotations()
 }
 
+/** PGN yang sudah sah diurai → partai impor di fase analisis, dilihat dari posisi terakhir. */
+function loadImportedGame(game: Extract<PgnParseResult, { ok: true }>): void {
+  importedGame.value = { tags: game.tags, result: game.result }
+  offline.importGame(game.moves)
+  viewPly.value = null
+  clearBoardAnnotations()
+}
+
 function backToLive(): void {
   viewPly.value = null
   clearBoardAnnotations()
@@ -431,6 +527,11 @@ const statusText = computed(() => {
   }
 
   if (offline.phase.value === 'setup') return t('status.notStarted')
+  // Didahulukan dari status papan: partai impor yang berakhir mat tetap
+  // "partai impor", dan papannya tidak perlu diredupkan seperti partai usai.
+  if (offline.phase.value === 'analysis') {
+    return t('status.analysis', { result: importedGame.value?.result ?? '*' })
+  }
 
   const state = offline.status.value
   if (state.over) {
@@ -453,13 +554,31 @@ const statusTone = computed(() => {
     return state?.check ? 'check' : 'normal'
   }
   if (offline.phase.value === 'setup') return 'draw'
+  if (offline.phase.value === 'analysis') return 'normal'
 
   const state = offline.status.value
   if (state.over) return state.reason === 'checkmate' ? 'win' : 'draw'
   return state.check ? 'check' : 'normal'
 })
 
-const statusOverlayVisible = computed(() => statusTone.value === 'win' || statusTone.value === 'draw')
+/**
+ * Lapisan redup "partai usai" ditutup lewat tombol "Ulas partai" — ulasan
+ * butuh papan yang terlihat. Dibuka lagi begitu riwayatnya berubah (permainan
+ * baru, main lagi, undo) atau pindah mode.
+ */
+const overlayDismissed = ref(false)
+watch([plyCount, appMode], () => (overlayDismissed.value = false))
+
+/**
+ * Hanya di posisi LIVE: lapisan itu bercerita tentang posisi terakhir partai.
+ * Menelusuri riwayat — inti dari mengulas — tidak boleh tertutup olehnya.
+ */
+const statusOverlayVisible = computed(
+  () =>
+    (statusTone.value === 'win' || statusTone.value === 'draw') &&
+    isLive.value &&
+    !overlayDismissed.value
+)
 
 // ---------------------------------------------------------------------------
 // Papan nama di atas dan bawah papan
@@ -475,11 +594,13 @@ const bottomColor = computed<Color>(() => orientation.value)
  * wajahnya harus ikut. Sisi manusia tidak punya wajah untuk ditempelkan.
  */
 const faceFor = (color: Color): Opponent | null =>
-  !isOnline.value &&
-  offline.mode.value === 'lawan-komputer' &&
-  color !== offline.humanColor.value
-    ? host.value
-    : null
+  vsComputer.value && color !== offline.humanColor.value ? host.value : null
+
+/** Nama pemain dari tag PGN partai impor; null bila kosong atau "?" (tanda tidak diketahui di PGN). */
+function importedName(color: Color): string | null {
+  const name = importedGame.value?.tags[color === 'w' ? 'White' : 'Black']?.trim()
+  return name && name !== '?' ? name : null
+}
 
 const topFace = computed(() => faceFor(topColor.value))
 const bottomFace = computed(() => faceFor(bottomColor.value))
@@ -494,6 +615,10 @@ function playerLabel(color: Color): string {
     const you = color === online.myColor.value ? ` (${t('player.you')})` : ''
     const gone = player.connected ? '' : ` — ${t('player.disconnected')}`
     return `${player.name}${you}${gone}`
+  }
+  if (analysing.value) {
+    const name = importedName(color)
+    return name ? `${name} (${colorName(color)})` : colorName(color)
   }
   if (offline.mode.value === 'dua-pemain') return colorName(color)
   return color === offline.humanColor.value
@@ -570,6 +695,20 @@ const overlayActionLabel = computed(() =>
 const overlayAction = () => {
   if (isOnline.value) return rematch()
   return offlineSetup.value ? startGame() : resetGame()
+}
+
+const reviewPanelRef = ref<InstanceType<typeof GameReviewPanel> | null>(null)
+
+/**
+ * "Ulas partai" dari lapisan partai-usai: mulai ulasan, singkirkan lapisannya
+ * supaya papan terlihat, dan bawa panel ulasan ke pandangan — di layar sempit
+ * panelnya ada jauh di bawah papan.
+ */
+function reviewFromOverlay(): void {
+  overlayDismissed.value = true
+  if (gameReview.status.value === 'idle') void gameReview.start()
+  const el = reviewPanelRef.value?.$el as HTMLElement | undefined
+  el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -694,14 +833,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <div v-if="statusOverlayVisible" class="board-dim">
                 <div class="status status--center" :class="`status--${statusTone}`">
                   <span>{{ statusText }}</span>
-                  <button
-                    v-if="overlayActionVisible"
-                    type="button"
-                    class="status__action"
-                    @click="overlayAction"
-                  >
-                    {{ overlayActionLabel }}
-                  </button>
+                  <div class="status__actions">
+                    <button
+                      v-if="overlayActionVisible"
+                      type="button"
+                      class="status__action"
+                      @click="overlayAction"
+                    >
+                      {{ overlayActionLabel }}
+                    </button>
+                    <button
+                      v-if="reviewAvailable && plyCount > 0"
+                      type="button"
+                      class="status__action status__action--ghost"
+                      @click="reviewFromOverlay"
+                    >
+                      {{ t('review.start') }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </Transition>
@@ -731,7 +880,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             :ply-count="plyCount"
             :active-ply="displayPly"
             :marks="reviewMarks"
+            :opening="openingLabel"
+            :pgn-feedback="pgnFeedback"
             @jump="jumpView"
+            @copy-pgn="copyPgn"
           />
         </div>
       </div>
@@ -783,7 +935,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           v-model:mode="offline.mode.value"
           v-model:elo="offline.elo.value"
           :human-color="offline.humanColor.value"
-          :can-undo="offline.history.value.length > 0"
+          :can-undo="offline.history.value.length > 0 && !analysing"
           :busy="offline.thinking.value"
           :setup-locked="offline.setupLocked.value"
           :phase="offline.phase.value"
@@ -795,8 +947,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           @play-as="offline.playAs"
         />
 
+        <PgnImport v-if="!isOnline" @load="loadImportedGame" />
+
         <GameReviewPanel
           v-if="reviewAvailable"
+          ref="reviewPanelRef"
           :status="gameReview.status.value"
           :progress="gameReview.progress.value"
           :review="gameReview.review.value"
@@ -811,7 +966,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         />
 
         <footer class="meta">
-          <p v-if="!isOnline && offline.mode.value === 'lawan-komputer'" class="meta__line">
+          <p v-if="vsComputer" class="meta__line">
             {{ t('meta.poweredBy') }}
           </p>
           <p v-if="searchInfo" class="meta__line">{{ t('meta.lastSearch') }} {{ searchInfo }}</p>
@@ -1102,6 +1257,24 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 .status__action:hover {
   background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.status__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+/* Aksi kedua: sama tingginya, tapi tidak bersaing dengan aksi utama. */
+.status__action--ghost {
+  background: transparent;
+  color: var(--accent);
+}
+
+.status__action--ghost:hover {
+  background: var(--accent-soft);
   border-color: var(--accent-hover);
 }
 

@@ -35,6 +35,7 @@ export const id = {
 
   // Baris status
   'status.notStarted': 'Atur lawan dan warna, lalu tekan "Mulai"',
+  'status.analysis': 'Partai impor ({result}) — telusuri dan ulas',
   'status.noRoom': 'Belum berada di room mana pun',
   'status.waitingOpponent': 'Menunggu lawan bergabung…',
   'status.resigned': '{loser} menyerah — {winner} menang',
@@ -148,6 +149,20 @@ export const id = {
   // Daftar langkah
   'history.title': 'Daftar langkah',
   'history.empty': 'Belum ada langkah.',
+  'history.copyPgn': 'Salin PGN',
+  'history.copyPgnHint': 'Salin partai dalam format PGN — bisa ditempel ke Lichess, Chess.com, dsb.',
+  'history.pgnCopied': 'Tersalin',
+  'history.pgnFailed': 'Gagal menyalin',
+
+  // Impor PGN
+  'import.open': 'Impor PGN',
+  'import.label': 'Tempel PGN satu partai',
+  'import.placeholder': '[White "…"]\n[Black "…"]\n\n1. e4 e5 2. Nf3 …',
+  'import.load': 'Muat partai',
+  'import.cancel': 'Batal',
+  'import.error.empty': 'Tidak ada langkah yang terbaca.',
+  'import.error.illegal': 'Langkah ke-{ply} ("{san}") tidak sah di posisinya.',
+  'import.error.custom-start': 'PGN dari posisi awal khusus (tag FEN) belum didukung.',
 
   // Dialog promosi
   'promotion.title': 'Promosi pion',

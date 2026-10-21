@@ -106,28 +106,26 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
       @jump="(ply) => emit('jump', ply)"
     />
 
-    <table v-if="review" class="review__table">
-      <tbody>
-        <tr v-for="color in COLORS" :key="color">
-          <th scope="row" class="review__player">
-            <span class="review__dot" :class="`review__dot--${color}`" />
-            <span class="review__name">{{ labels[color] }}</span>
-          </th>
-          <td class="review__accuracy" :title="t('review.accuracy')">{{ accuracyText(color) }}</td>
-          <td class="review__counts">
-            <span
-              v-for="item in SHOWN"
-              :key="item.cls"
-              class="review__count"
-              :class="[`review__count--${item.cls}`, { 'review__count--zero': !review.counts[color][item.cls] }]"
-              :title="t(`review.class.${item.cls}`)"
-            >
-              {{ item.symbol }} {{ review.counts[color][item.cls] }}
-            </span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div v-if="review" class="review__players">
+      <div v-for="color in COLORS" :key="color" class="review__row">
+        <span class="review__player">
+          <span class="review__dot" :class="`review__dot--${color}`" />
+          <span class="review__name" :title="labels[color]">{{ labels[color] }}</span>
+        </span>
+        <span class="review__accuracy" :title="t('review.accuracy')">{{ accuracyText(color) }}</span>
+        <span class="review__counts">
+          <span
+            v-for="item in SHOWN"
+            :key="item.cls"
+            class="review__count"
+            :class="[`review__count--${item.cls}`, { 'review__count--zero': !review.counts[color][item.cls] }]"
+            :title="t(`review.class.${item.cls}`)"
+          >
+            {{ item.symbol }} {{ review.counts[color][item.cls] }}
+          </span>
+        </span>
+      </div>
+    </div>
 
     <div v-if="moment" class="review__moment" :class="`review__moment--${moment.cls}`">
       <p class="review__moment-head">
@@ -154,8 +152,14 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
 </template>
 
 <style scoped>
+/*
+ * `minmax(0, 1fr)`, bukan kolom bawaan: kolom grid bawaan tidak mau lebih
+ * sempit dari isi terlebarnya, jadi satu baris yang tak bisa dibungkus bisa
+ * menarik seluruh panel — grafik ikut — keluar dari panel samping.
+ */
 .review {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.55rem;
   padding: 0.75rem;
   background: var(--surface);
@@ -201,25 +205,25 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
   font-variant-numeric: tabular-nums;
 }
 
-.review__table {
-  width: 100%;
-  border-collapse: collapse;
+.review__players {
+  display: grid;
+  gap: 0.45rem;
   font-size: 0.84rem;
   font-variant-numeric: tabular-nums;
 }
 
-.review__table td,
-.review__table th {
-  padding: 0.3rem 0.2rem;
-  vertical-align: middle;
+/* Nama (boleh terpotong) + akurasi di baris pertama; hitungan di bawahnya, boleh membungkus. */
+.review__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.15rem 0.5rem;
 }
 
 .review__player {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-weight: inherit;
-  text-align: left;
   min-width: 0;
 }
 
@@ -253,14 +257,17 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
 }
 
 .review__counts {
-  text-align: right;
-  white-space: nowrap;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.6rem;
+  padding-left: 1.05rem; /* sejajar dengan nama, melewati titik warna */
   font-family: var(--font-mono);
   font-size: 0.78rem;
 }
 
-.review__count + .review__count {
-  margin-left: 0.45rem;
+.review__count {
+  white-space: nowrap;
 }
 
 .review__count--best {
@@ -333,7 +340,7 @@ const nextMoment = computed(() => nearestMoment(props.marks, props.activePly, 1)
 
 .review__nav {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.4rem;
 }
 

@@ -588,3 +588,38 @@ test('"Mulai" membuka papan untuk dimainkan', () =>
     click(game, 'e2', 'e4')
     assert.equal(game.history.value.length, 1)
   }))
+
+test('importGame: fase analisis — riwayat utuh, papan beku, mesin & undo diam', () =>
+  withFreshGame(async (game) => {
+    // Lawan komputer memegang hitam: kalau penjaganya bocor, mesin akan menjawab.
+    game.mode.value = 'lawan-komputer'
+    const position = new Position()
+    const moves = ['e2e4', 'e7e5', 'g1f3'].map((uci) => {
+      const move = position
+        .legalMoves()
+        .find((m) => m.from === at(uci.slice(0, 2)) && m.to === at(uci.slice(2, 4)))!
+      position.makeMove(move)
+      return move
+    })
+
+    game.importGame(moves)
+    assert.equal(game.phase.value, 'analysis')
+    assert.deepEqual(
+      game.history.value.map((entry) => entry.san),
+      ['e4', 'e5', 'Nf3']
+    )
+    assert.equal(game.fen.value, position.fen())
+    assert.equal(game.canPlay.value, null, 'papan analisis tidak boleh bisa dimainkan')
+    assert.equal(game.premoveColor.value, null)
+
+    await sleep(MIN_REPLY_MS + 200)
+    assert.equal(game.history.value.length, 3, 'mesin tidak boleh menjawab di fase analisis')
+    assert.equal(game.thinking.value, false)
+
+    game.undo()
+    assert.equal(game.history.value.length, 3, 'undo dimatikan di fase analisis')
+
+    game.newGame()
+    assert.equal(game.phase.value, 'setup')
+    assert.equal(game.history.value.length, 0)
+  }))
