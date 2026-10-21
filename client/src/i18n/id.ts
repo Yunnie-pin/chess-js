@@ -168,6 +168,25 @@ export const id = {
   'history.viewing': 'Melihat langkah {ply} dari {total}',
   'history.backToCurrent': 'Kembali ke posisi sekarang',
 
+  // Ulasan pasca-partai
+  'review.title': 'Ulasan partai',
+  'review.hint': 'Stockfish menilai setiap langkah: akurasi dan kesalahan tiap pemain.',
+  'review.start': 'Ulas partai',
+  'review.cancel': 'Batal',
+  'review.progress': 'Menganalisis… {done}/{total}',
+  'review.accuracy': 'Akurasi',
+  'review.class.best': 'Langkah terbaik',
+  'review.class.good': 'Bagus',
+  'review.class.inaccuracy': 'Kurang akurat',
+  'review.class.mistake': 'Kesalahan',
+  'review.class.blunder': 'Blunder',
+  'review.graph.ariaLabel': 'Grafik evaluasi sepanjang partai — klik untuk melompat ke posisi itu',
+  'review.graph.start': 'Posisi awal',
+  'review.better': 'Lebih baik: {move}',
+  'review.line': 'Variasi mesin: {line}',
+  'review.prevMoment': 'Kesalahan sebelumnya',
+  'review.nextMoment': 'Kesalahan berikutnya',
+
   // Tautan repositori
   'repo.title': 'Open source',
   'repo.subtitle': 'Ikut ngoprek di GitHub — issue dan PR dibuka'

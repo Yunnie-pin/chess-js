@@ -5,6 +5,7 @@ import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
 import EvalBar from './components/EvalBar.vue'
 import GameControls from './components/GameControls.vue'
+import GameReviewPanel from './components/GameReviewPanel.vue'
 import LanguageSwitch from './components/LanguageSwitch.vue'
 import SettingsMenu from './components/SettingsMenu.vue'
 import MoveHistory from './components/MoveHistory.vue'
@@ -17,6 +18,7 @@ import RepoLink from './components/RepoLink.vue'
 import RoomPanel from './components/RoomPanel.vue'
 import { useChessGame } from './composables/useChessGame.ts'
 import { useOnlineGame } from './composables/useOnlineGame.ts'
+import { useGameReview } from './composables/useGameReview.ts'
 import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
@@ -220,11 +222,33 @@ const analysisFen = computed<string | null>(() => {
 
 const evaluation = ref<Evaluation | null>(null)
 
+// ---------------------------------------------------------------------------
+// Ulasan pasca-partai — hanya offline untuk saat ini. Online sengaja belum:
+// selama partai berjalan analisis di sana sama dengan curang, dan membukanya
+// sesudah partai selesai butuh gerbang tersendiri.
+// ---------------------------------------------------------------------------
+
+/** Posisi partai offline: indeks 0 = posisi awal, indeks i = sesudah i ply. */
+const reviewFens = computed(() => [START_FEN, ...offline.history.value.map((entry) => entry.fen)])
+const reviewMoves = computed(() => offline.history.value.map((entry) => entry.move))
+const gameReview = useGameReview(reviewFens, reviewMoves)
+
+/** Tombol ulasan muncul begitu partai offline usai; label langkah tetap ada selama riwayatnya sama. */
+const reviewAvailable = computed(() => !isOnline.value && offline.phase.value === 'finished')
+const reviewSans = computed(() => offline.history.value.map((entry) => entry.san))
+const reviewMarks = computed(() =>
+  isOnline.value ? [] : (gameReview.review.value?.plies.map((ply) => ply?.cls ?? null) ?? [])
+)
+
 watch(
   analysisFen,
   (fen) => {
-    if (fen) analysePosition(fen, (result) => (evaluation.value = result))
-    else {
+    if (fen) {
+      analysePosition(fen, (result) => {
+        evaluation.value = result
+        gameReview.remember(result)
+      })
+    } else {
       stopAnalysis()
       evaluation.value = null
     }
@@ -233,6 +257,19 @@ watch(
 )
 
 onBeforeUnmount(stopAnalysis)
+
+/**
+ * Evaluasi yang ditampilkan: hasil live bila sudah untuk posisi ini dan
+ * setidaknya sedalam yang tersimpan; selain itu hasil tersimpan (dari ulasan
+ * atau kunjungan sebelumnya), supaya menelusuri partai yang sudah diulas
+ * langsung menampilkan angka tanpa menunggu mesin mulai dari kedalaman 1.
+ */
+const shownEvaluation = computed<Evaluation | null>(() => {
+  const live = evaluation.value
+  const cached = gameReview.cachedEvaluation(analysedFen.value)
+  if (live && live.fen === analysedFen.value && (!cached || live.depth >= cached.depth)) return live
+  return cached ?? live
+})
 
 /** Kedalaman minimal sebelum panah saran ditampilkan — supaya tidak lompat-lompat sebelum mengendap. */
 const SUGGESTION_MIN_DEPTH = 6
@@ -250,7 +287,7 @@ const SUGGESTION_MIN_DEPTH = 6
 const suggestionArrows = computed<{ from: Square; to: Square }[]>(() => {
   if (!suggestionEnabled.value) return []
   if (isLive.value && canPlay.value === null) return []
-  const result = evaluation.value
+  const result = shownEvaluation.value
   if (!result || result.fen !== analysedFen.value || result.depth < SUGGESTION_MIN_DEPTH) return []
   return result.moves
 })
@@ -631,7 +668,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </div>
 
         <div class="board-stage">
-          <EvalBar v-if="evalBarVisible" :evaluation="evaluation" :orientation="orientation" />
+          <EvalBar v-if="evalBarVisible" :evaluation="shownEvaluation" :orientation="orientation" />
 
           <div class="board-wrap">
             <ChessBoard
@@ -693,6 +730,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             :rows="historyRows"
             :ply-count="plyCount"
             :active-ply="displayPly"
+            :marks="reviewMarks"
             @jump="jumpView"
           />
         </div>
@@ -755,6 +793,21 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           @undo="undoMove"
           @flip="flipBoard"
           @play-as="offline.playAs"
+        />
+
+        <GameReviewPanel
+          v-if="reviewAvailable"
+          :status="gameReview.status.value"
+          :progress="gameReview.progress.value"
+          :review="gameReview.review.value"
+          :labels="{ w: playerLabel('w'), b: playerLabel('b') }"
+          :scores="gameReview.scores.value"
+          :marks="reviewMarks"
+          :sans="reviewSans"
+          :active-ply="displayPly"
+          @start="gameReview.start"
+          @cancel="gameReview.cancel"
+          @jump="jumpView"
         />
 
         <footer class="meta">

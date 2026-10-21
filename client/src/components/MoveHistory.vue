@@ -2,6 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 
 import { useI18n } from '../i18n/index.ts'
+import type { MoveClass } from '../engine/moveClassify.ts'
 
 const { t } = useI18n()
 
@@ -11,7 +12,30 @@ interface Row {
   black?: { san: string }
 }
 
-const props = defineProps<{ rows: Row[]; plyCount: number; activePly: number }>()
+const props = defineProps<{
+  rows: Row[]
+  plyCount: number
+  activePly: number
+  /** Label ulasan per ply (indeks 0 = ply 1); kosong selama partai belum diulas. */
+  marks?: readonly (MoveClass | null)[]
+}>()
+
+/**
+ * Simbol anotasi catur yang lazim. 'good' sengaja tanpa simbol — kalau setiap
+ * langkah wajar diberi tanda, tanda yang penting justru tenggelam.
+ */
+const MARK_SYMBOL: Record<MoveClass, string> = {
+  best: '★',
+  good: '',
+  inaccuracy: '?!',
+  mistake: '?',
+  blunder: '??'
+}
+
+const markOf = (ply: number): MoveClass | null => {
+  const mark = props.marks?.[ply - 1] ?? null
+  return mark && MARK_SYMBOL[mark] ? mark : null
+}
 
 const emit = defineEmits<{ jump: [ply: number] }>()
 
@@ -81,6 +105,12 @@ watch(
                 @click="emit('jump', plyOf(row, 'white'))"
               >
                 {{ row.white.san }}
+                <span
+                  v-if="markOf(plyOf(row, 'white'))"
+                  class="history__mark"
+                  :class="`history__mark--${markOf(plyOf(row, 'white'))}`"
+                  :title="t(`review.class.${markOf(plyOf(row, 'white'))!}`)"
+                >{{ MARK_SYMBOL[markOf(plyOf(row, 'white'))!] }}</span>
               </button>
             </td>
             <td class="history__san">
@@ -93,6 +123,12 @@ watch(
                 @click="emit('jump', plyOf(row, 'black'))"
               >
                 {{ row.black.san }}
+                <span
+                  v-if="markOf(plyOf(row, 'black'))"
+                  class="history__mark"
+                  :class="`history__mark--${markOf(plyOf(row, 'black'))}`"
+                  :title="t(`review.class.${markOf(plyOf(row, 'black'))!}`)"
+                >{{ MARK_SYMBOL[markOf(plyOf(row, 'black'))!] }}</span>
               </button>
             </td>
           </tr>
@@ -171,6 +207,29 @@ watch(
 
 .history__move:hover {
   background: var(--surface-hover);
+}
+
+.history__mark {
+  margin-left: 0.15rem;
+  font-weight: 700;
+}
+
+/* Warna mengikuti kebiasaan papan ulasan: biru → oranye → merah, makin parah. */
+.history__mark--best {
+  color: var(--accent);
+  font-size: 0.8em;
+}
+
+.history__mark--inaccuracy {
+  color: var(--sky-text);
+}
+
+.history__mark--mistake {
+  color: rgb(232 133 63);
+}
+
+.history__mark--blunder {
+  color: var(--danger-text);
 }
 
 .history__move--active {

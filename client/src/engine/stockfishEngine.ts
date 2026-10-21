@@ -134,17 +134,57 @@ export interface Evaluation {
    * berlapis. Kosong selama belum ada PV; panjangnya ≤ `MULTI_PV`.
    */
   moves: { from: Square; to: Square }[]
+  /**
+   * Lini utama LENGKAP dari lini terbaik, dalam UCI ("e2e4 e7e5 …") — untuk
+   * "lebih baik: …" di ulasan. Hanya lini 1; alternatif cukup langkah pertamanya.
+   */
+  line: string[]
 }
 
 type EvaluationListener = (evaluation: Evaluation) => void
+
+/**
+ * Kedalaman ulasan pasca-partai — sedikit di bawah `ANALYSIS_DEPTH` karena
+ * yang dinilai seluruh partai sekaligus (puluhan posisi berturut-turut), dan
+ * untuk label langkah selisih dua ply kedalaman nyaris tak mengubah hasil.
+ */
+export const REVIEW_DEPTH = 14
+
+/**
+ * Dua jenis pencarian berbagi SATU worker analisis:
+ * - `live`: posisi yang sedang tampil (bilah evaluasi + panah), MultiPV penuh.
+ * - `review`: satu posisi dari antrean ulasan partai, MultiPV 1 — label langkah
+ *   cuma butuh lini terbaik, dan lini tambahan memperlambat tiap posisi.
+ * Live selalu didahulukan: kalau keduanya menunggu, ulasan yang mengalah.
+ */
+type SearchKind = 'live' | 'review'
 
 let analyser: Worker | null = null
 let analyserReady: Promise<void> | null = null
 let analysisListener: EvaluationListener | null = null
 /** FEN yang benar-benar sedang dicari worker, atau null bila menganggur. */
 let searchingFen: string | null = null
+/** Jenis pencarian yang sedang jalan — hanya bermakna selama `searchingFen` terisi. */
+let searchKind: SearchKind = 'live'
 /** FEN terbaru yang diminta tapi belum dimulai — worker masih menghentikan pencarian sebelumnya. */
 let pendingFen: string | null = null
+/**
+ * Pencarian ulasan yang sedang jalan sudah dihentikan paksa (dibatalkan, atau
+ * didahului live) — hasilnya terpotong, jadi jangan dicatat sebagai hasil
+ * posisi itu. Posisinya tetap di antrean dan diulang nanti.
+ */
+let discardSearch = false
+/** MultiPV yang sedang terpasang di worker — diganti hanya saat menganggur. */
+let currentMultiPv = MULTI_PV
+
+interface ReviewJob {
+  fens: readonly string[]
+  /** Indeks posisi berikutnya yang belum punya hasil. */
+  next: number
+  onResult: (index: number, evaluation: Evaluation) => void
+  resolve: () => void
+}
+let review: ReviewJob | null = null
 
 // Ringkasan pencarian yang sedang jalan, dipertahankan lintas baris `info` yang
 // tak lengkap. Direset di `startAnalysis`.
@@ -153,6 +193,8 @@ let searchMoves: ({ from: Square; to: Square } | undefined)[] = []
 let searchCp: number | null = null
 let searchMate: number | null = null
 let searchDepth = 0
+/** Lini utama lengkap (UCI) dari lini terbaik. */
+let searchLine: string[] = []
 
 function getAnalyser(): Worker {
   if (!analyser) {
@@ -187,15 +229,56 @@ function sideToMove(fen: string): 'w' | 'b' {
   return fen.split(' ')[1] === 'b' ? 'b' : 'w'
 }
 
-function startAnalysis(fen: string): void {
+/** Hanya boleh dipanggil saat worker menganggur (`searchingFen === null`). */
+function startAnalysis(fen: string, kind: SearchKind): void {
   const engine = getAnalyser()
   searchingFen = fen
+  searchKind = kind
+  discardSearch = false
   searchMoves = []
   searchCp = null
   searchMate = null
   searchDepth = 0
+  searchLine = []
+  // `setoption` hanya aman di antara pencarian — dan di sinilah tempatnya,
+  // karena fungsi ini memang hanya dipanggil saat worker menganggur.
+  const multiPv = kind === 'live' ? MULTI_PV : 1
+  if (multiPv !== currentMultiPv) {
+    engine.postMessage(`setoption name MultiPV value ${multiPv}`)
+    currentMultiPv = multiPv
+  }
   engine.postMessage(`position fen ${fen}`)
-  engine.postMessage(`go depth ${ANALYSIS_DEPTH}`)
+  engine.postMessage(`go depth ${kind === 'live' ? ANALYSIS_DEPTH : REVIEW_DEPTH}`)
+}
+
+/** Worker baru saja menganggur — mulai pekerjaan berikutnya: live dulu, baru antrean ulasan. */
+function startNextSearch(): void {
+  if (pendingFen) {
+    const next = pendingFen
+    pendingFen = null
+    startAnalysis(next, 'live')
+    return
+  }
+  if (!review) return
+  if (review.next < review.fens.length) {
+    startAnalysis(review.fens[review.next], 'review')
+  } else {
+    const done = review
+    review = null
+    done.resolve()
+  }
+}
+
+function currentEvaluation(fen: string): Evaluation {
+  return {
+    fen,
+    cp: searchCp,
+    mate: searchMate,
+    depth: searchDepth,
+    // Padatkan: buang celah kalau lini 2 sempat datang sebelum lini 1.
+    moves: searchMoves.filter((move): move is { from: Square; to: Square } => move !== undefined),
+    line: [...searchLine]
+  }
 }
 
 function onAnalyserLine(event: MessageEvent<string>): void {
@@ -203,21 +286,29 @@ function onAnalyserLine(event: MessageEvent<string>): void {
   if (typeof line !== 'string') return
 
   if (line.startsWith('bestmove')) {
-    // Pencarian berhenti — entah tuntas sampai ANALYSIS_DEPTH, entah karena
+    // Pencarian berhenti — entah tuntas sampai kedalamannya, entah karena
     // `stop`. Baru sekarang (sesudah `bestmove`) dijamin tidak ada lagi baris
     // `info` nyasar dari pencarian lama, jadi posisi berikutnya aman dimulai.
-    searchingFen = null
-    if (pendingFen) {
-      const next = pendingFen
-      pendingFen = null
-      startAnalysis(next)
+    const finished = searchingFen
+    // `bestmove (none)` = posisi akhir (mat/remis): Stockfish melapor `depth 0`
+    // karena tak ada yang perlu dicari, padahal nilainya eksak. Tanpa ini
+    // posisi akhir tak pernah dianggap cukup dalam dan dianalisis ulang terus.
+    if (line.startsWith('bestmove (none)')) searchDepth = ANALYSIS_DEPTH
+    if (finished && searchKind === 'review' && !discardSearch && review) {
+      review.onResult(review.next, currentEvaluation(finished))
+      review.next++
     }
+    searchingFen = null
+    discardSearch = false
+    startNextSearch()
     return
   }
 
-  // Selagi berpindah posisi (`pendingFen` terisi) baris `info` yang masuk masih
-  // milik posisi lama — abaikan sampai `bestmove`-nya lewat.
-  if (pendingFen || !searchingFen || !analysisListener || !line.startsWith('info ')) return
+  // Selagi berpindah posisi (`pendingFen` terisi) atau membuang pencarian yang
+  // dipotong, baris `info` yang masuk masih milik pencarian lama — abaikan
+  // sampai `bestmove`-nya lewat.
+  if (pendingFen || discardSearch || !searchingFen || !line.startsWith('info ')) return
+  if (searchKind === 'live' && !analysisListener) return
 
   const cpMatch = /\bscore cp (-?\d+)/.exec(line)
   const mateMatch = /\bscore mate (-?\d+)/.exec(line)
@@ -235,38 +326,37 @@ function onAnalyserLine(event: MessageEvent<string>): void {
     if (depthMatch) searchDepth = Number(depthMatch[1])
   }
 
-  // Token pertama sesudah `pv` = langkah pertama lini itu. Tidak semua baris
-  // `info` membawanya (mis. `lowerbound`), jadi yang terakhir dipertahankan.
-  const pvMatch = /\bpv (\S+)/.exec(line)
+  // `pv` selalu field terakhir di baris `info`: token pertamanya = langkah
+  // pertama lini itu, seluruhnya = lini utama. Tidak semua baris `info`
+  // membawanya (mis. `lowerbound`), jadi yang terakhir dipertahankan.
+  const pvMatch = /\bpv (.+)$/.exec(line)
   if (pvMatch) {
-    const move = parseUciMove(pvMatch[1])
+    const tokens = pvMatch[1].trim().split(/\s+/)
+    const move = parseUciMove(tokens[0])
     if (move) searchMoves[rank - 1] = { from: move.from, to: move.to }
+    if (rank === 1) searchLine = tokens
   }
 
-  analysisListener({
-    fen: searchingFen,
-    cp: searchCp,
-    mate: searchMate,
-    depth: searchDepth,
-    // Padatkan: buang celah kalau lini 2 sempat datang sebelum lini 1.
-    moves: searchMoves.filter((move): move is { from: Square; to: Square } => move !== undefined)
-  })
+  // Ulasan baru dilaporkan sekali, di `bestmove`; live dikabari tiap kedalaman.
+  if (searchKind === 'live') analysisListener?.(currentEvaluation(searchingFen))
 }
 
 /**
  * Minta bilah evaluasi menilai `fen`, memanggil `onUpdate` tiap kali kedalaman
  * bertambah. Aman dipanggil berulang dengan FEN yang sama (tidak melakukan
  * apa-apa) atau berganti-ganti — pencarian yang sedang jalan dihentikan lebih
- * dulu, dan yang baru menyusul begitu `bestmove` lama lewat.
+ * dulu, dan yang baru menyusul begitu `bestmove` lama lewat. Ulasan partai yang
+ * sedang jalan ikut mengalah, lalu dilanjutkan sesudahnya.
  */
 export function analysePosition(fen: string, onUpdate: EvaluationListener): void {
   analysisListener = onUpdate
   void analyserWhenReady().then(() => {
-    if (searchingFen === fen || pendingFen === fen) return
+    if ((searchingFen === fen && searchKind === 'live') || pendingFen === fen) return
     if (searchingFen === null) {
-      startAnalysis(fen)
+      startAnalysis(fen, 'live')
     } else {
       pendingFen = fen
+      if (searchKind === 'review') discardSearch = true
       getAnalyser().postMessage('stop')
     }
   })
@@ -276,5 +366,40 @@ export function analysePosition(fen: string, onUpdate: EvaluationListener): void
 export function stopAnalysis(): void {
   analysisListener = null
   pendingFen = null
-  if (analyser && searchingFen !== null) analyser.postMessage('stop')
+  // Hanya pencarian LIVE yang dihentikan — ulasan partai punya umurnya sendiri.
+  if (analyser && searchingFen !== null && searchKind === 'live') analyser.postMessage('stop')
+}
+
+/**
+ * Ulasan pasca-partai: nilai tiap FEN berurutan di worker analisis, kabari
+ * `onResult(indeks, hasil)` per posisi begitu pencariannya tuntas. Promise
+ * selesai saat seluruh antrean beres — atau langsung, bila dibatalkan lewat
+ * `cancelGameAnalysis` (pemanggil yang membatalkan sudah tahu sendiri).
+ * Memulai ulasan baru membatalkan yang lama.
+ */
+export function analyseGame(
+  fens: readonly string[],
+  onResult: (index: number, evaluation: Evaluation) => void
+): Promise<void> {
+  cancelGameAnalysis()
+  return new Promise((resolve) => {
+    const job: ReviewJob = { fens, next: 0, onResult, resolve }
+    review = job
+    void analyserWhenReady().then(() => {
+      // Bisa saja sudah dibatalkan/diganti selagi handshake berlangsung.
+      if (review === job && searchingFen === null) startNextSearch()
+    })
+  })
+}
+
+/** Batalkan ulasan partai yang sedang jalan; tidak menyentuh analisis live. */
+export function cancelGameAnalysis(): void {
+  if (!review) return
+  const job = review
+  review = null
+  job.resolve()
+  if (analyser && searchingFen !== null && searchKind === 'review') {
+    discardSearch = true
+    analyser.postMessage('stop')
+  }
 }

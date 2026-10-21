@@ -138,6 +138,24 @@ export const en: Messages = {
   'history.viewing': 'Viewing move {ply} of {total}',
   'history.backToCurrent': 'Back to current position',
 
+  'review.title': 'Game review',
+  'review.hint': 'Stockfish grades every move: accuracy and mistakes for each player.',
+  'review.start': 'Review game',
+  'review.cancel': 'Cancel',
+  'review.progress': 'Analysing… {done}/{total}',
+  'review.accuracy': 'Accuracy',
+  'review.class.best': 'Best move',
+  'review.class.good': 'Good',
+  'review.class.inaccuracy': 'Inaccuracy',
+  'review.class.mistake': 'Mistake',
+  'review.class.blunder': 'Blunder',
+  'review.graph.ariaLabel': 'Evaluation graph across the game — click to jump to that position',
+  'review.graph.start': 'Starting position',
+  'review.better': 'Better was {move}',
+  'review.line': 'Engine line: {line}',
+  'review.prevMoment': 'Previous mistake',
+  'review.nextMoment': 'Next mistake',
+
   'repo.title': 'Open source',
   'repo.subtitle': 'Come tinker on GitHub — issues and PRs welcome'
 }
