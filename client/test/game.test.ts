@@ -37,12 +37,13 @@ async function stubFindBestMove(fen: string) {
  */
 function withGame(run: (game: Game) => void | Promise<void>): Promise<void> {
   const scope = effectScope()
-  let result: void | Promise<void>
-  scope.run(() => {
+  // Pakai nilai kembalian `scope.run` — penugasan dari dalam callback tidak
+  // terlihat oleh TypeScript, yang lalu menganggap `result` belum diisi.
+  const result = scope.run(() => {
     const game = useChessGame({ findBestMove: stubFindBestMove })
     game.mode.value = 'dua-pemain' // matikan komputer kecuali tes memintanya
     game.phase.value = 'playing'
-    result = run(game)
+    return run(game)
   })
   return Promise.resolve(result).finally(() => scope.stop())
 }
@@ -50,11 +51,7 @@ function withGame(run: (game: Game) => void | Promise<void>): Promise<void> {
 /** Sama seperti `withGame`, tapi TANPA menandai sudah dimulai — untuk menguji keadaan sebelum "Permainan baru". */
 function withFreshGame(run: (game: Game) => void | Promise<void>): Promise<void> {
   const scope = effectScope()
-  let result: void | Promise<void>
-  scope.run(() => {
-    const game = useChessGame({ findBestMove: stubFindBestMove })
-    result = run(game)
-  })
+  const result = scope.run(() => run(useChessGame({ findBestMove: stubFindBestMove })))
   return Promise.resolve(result).finally(() => scope.stop())
 }
 

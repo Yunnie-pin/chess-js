@@ -86,13 +86,16 @@ function inScope<T>(make: () => T): { value: T; stop: () => void } {
 test('ulasan: idle → done, semua langkah dinilai, akurasi per warna', async () => {
   const fake = fakeAnalyser()
   const { value: review, stop } = inScope(() => useGameReview(SHORT.fens, SHORT.moves, fake.options))
+  // Dibaca lewat fungsi: `assert.equal(x.value, null)` mempersempit tipe
+  // `x.value` ke null untuk sisa tes, padahal nilainya berubah sesudah start().
+  const current = () => review.review.value
   assert.equal(review.status.value, 'idle')
-  assert.equal(review.review.value, null, 'label tidak boleh tampil sebelum diminta')
+  assert.equal(current(), null, 'label tidak boleh tampil sebelum diminta')
 
   await review.start()
   assert.equal(review.status.value, 'done')
   assert.deepEqual(review.progress.value, { done: 5, total: 5 })
-  const result = review.review.value
+  const result = current()
   assert.ok(result)
   assert.deepEqual(
     result.plies.map((ply) => ply?.cls),
