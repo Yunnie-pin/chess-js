@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 
 import CapturedPieces from './components/CapturedPieces.vue'
 import ChessBoard from './components/ChessBoard.vue'
@@ -20,9 +20,9 @@ import RoomPanel from './components/RoomPanel.vue'
 import { useChessGame } from './composables/useChessGame.ts'
 import { useOnlineGame } from './composables/useOnlineGame.ts'
 import { useGameReview } from './composables/useGameReview.ts'
-import { replayMoves, toPgn, type GameRecord, type PgnParseResult, type PgnResult } from './engine/gameRecord.ts'
+import { replayMoves, type GameRecord } from './engine/gameRecord.ts'
 import { openingName } from './engine/openings.ts'
-import { nearestMoment, type MoveClass } from './engine/moveClassify.ts'
+import { nearestMoment } from './engine/moveClassify.ts'
 import { useI18n } from './i18n/index.ts'
 import { HOST, opponentFor, type Opponent } from './opponents.ts'
 import { applyTheme } from './theme.ts'
@@ -36,8 +36,9 @@ import {
   undoEnabled
 } from './settings.ts'
 import { useGameSounds } from './composables/useGameSounds.ts'
+import { useBoardAnalysis } from './composables/useBoardAnalysis.ts'
+import { usePgn, type ImportedPgn } from './composables/usePgn.ts'
 import { primeAudioOnFirstGesture } from './sound/synth.ts'
-import { analysePosition, stopAnalysis, type Evaluation } from './engine/stockfishEngine.ts'
 import { Position, START_FEN, opponent } from '@chess/shared/chess'
 import type { Color, GameEndReason, Move, Piece, PieceType, Square } from '@chess/shared/types'
 
@@ -79,9 +80,6 @@ const analysing = computed(() => !isOnline.value && offline.phase.value === 'ana
 const vsComputer = computed(
   () => !isOnline.value && offline.mode.value === 'lawan-komputer' && !analysing.value
 )
-
-/** Tag PGN partai impor — nama pemain dan hasil — selama fase analisis. */
-const importedGame = shallowRef<{ tags: Record<string, string>; result: PgnResult } | null>(null)
 
 const host = computed(() => (vsComputer.value ? opponentFor(offline.elo.value) : HOST))
 
@@ -214,39 +212,6 @@ const canPlay = computed<Color | null>(() =>
 )
 
 // ---------------------------------------------------------------------------
-// Analisis Stockfish (worker tersendiri) — sumber bilah evaluasi DAN panah
-// saran. Menilai posisi yang SEDANG tampil sekuat mungkin, lepas dari kekuatan
-// bot, jadi keduanya jujur.
-// ---------------------------------------------------------------------------
-
-/** Bilah evaluasi: lawan komputer atau partai impor, dan hanya bila sakelarnya sendiri menyala. */
-const evalBarVisible = computed(() => showEvalBar.value && (vsComputer.value || analysing.value))
-/** Panah saran: lawan komputer ATAU dua pemain (tidak online). */
-const suggestionEnabled = computed(() => showSuggestion.value && !isOnline.value)
-/** Worker analisis jalan bila salah satu fitur memerlukannya. */
-const analysisActive = computed(() => evalBarVisible.value || suggestionEnabled.value)
-
-/** FEN posisi yang tampil: yang sedang ditelusuri, atau posisi sekarang. */
-const analysedFen = computed(() => viewedPosition.value?.fen() ?? offline.fen.value)
-
-/**
- * FEN yang benar-benar dikirim ke analiser — atau null untuk menjedanya.
- *
- * Kalau cuma panah saran yang dipakai (bilah evaluasi mati), tidak ada gunanya
- * menganalisis giliran LAWAN di posisi live: panahnya toh disembunyikan, dan
- * worker langkah bot sudah menghabiskan satu inti sendiri. Menelusuri riwayat
- * tetap dianalisis — di sanalah panah saran jadi alat review.
- */
-const analysisFen = computed<string | null>(() => {
-  if (!analysisActive.value) return null
-  // Partai impor tidak punya "giliran lawan" — posisi live-nya pun bahan analisis.
-  if (!evalBarVisible.value && isLive.value && canPlay.value === null && !analysing.value) return null
-  return analysedFen.value
-})
-
-const evaluation = ref<Evaluation | null>(null)
-
-// ---------------------------------------------------------------------------
 // Catatan partai + ulasan pasca-partai. Offline dan online memakai bentuk
 // catatan yang sama; bedanya hanya KAPAN ulasan boleh dibuka.
 // ---------------------------------------------------------------------------
@@ -288,148 +253,45 @@ const reviewAvailable = computed(() =>
 )
 const reviewMarks = computed(() => gameReview.review.value?.plies.map((ply) => ply?.cls ?? null) ?? [])
 
+/*
+ * Analisis Stockfish untuk posisi yang SEDANG tampil — bilah evaluasi, panah
+ * saran, panah "langkah yang seharusnya", badge ulasan. Kapan mesin boleh
+ * menyala (dan tidak pernah selama partai online) diatur useBoardAnalysis.
+ */
+const {
+  evalBarVisible,
+  shownEvaluation,
+  boardMoveBadge,
+  suggestionArrows
+} = useBoardAnalysis({
+  showEvalBar,
+  showSuggestion,
+  isOnline,
+  vsComputer,
+  analysing,
+  isLive,
+  canPlay,
+  displayedFen: () => viewedPosition.value?.fen() ?? offline.fen.value,
+  displayPly,
+  lastMoveTo: () => lastMove.value?.to,
+  marks: reviewMarks,
+  review: gameReview
+})
+
 /** Nama pembukaan sampai posisi yang sedang tampil — ikut berubah saat menelusuri riwayat. */
 const openingLabel = computed(() => openingName(gameRecord.value.fens.slice(0, displayPly.value + 1)))
 
-/** Hasil dalam notasi PGN; '*' selama partai belum usai. */
-const pgnResult = computed<PgnResult>(() => {
-  if (analysing.value) return importedGame.value?.result ?? '*'
-  if (!isOnline.value) return offline.status.value.result
-  const resigned = online.roomState.value?.resignedBy
-  if (resigned) return resigned === 'w' ? '0-1' : '1-0'
-  return online.gameStatus.value?.result ?? '*'
+/** PGN keluar-masuk: salin, nama pemain untuk tag, hasil partai, tag partai impor. */
+const pgn = usePgn({
+  offline,
+  online,
+  isOnline,
+  analysing,
+  vsComputer,
+  record: gameRecord,
+  hostName: () => host.value.name
 })
 
-/** Umpan balik singkat sesudah PGN disalin: 'copied', 'failed', atau null. */
-const pgnFeedback = ref<'copied' | 'failed' | null>(null)
-let pgnFeedbackTimer: ReturnType<typeof setTimeout> | null = null
-
-/**
- * Nama pemain untuk tag PGN — polos, tanpa "(Anda)" atau "— terputus" yang
- * dipakai `playerLabel` di layar. Sisi mesin dicatat dengan Elo-nya, seperti
- * kebiasaan PGN dari partai lawan komputer.
- */
-function pgnName(color: Color): string {
-  if (isOnline.value) {
-    return online.roomState.value?.players.find((entry) => entry.seat === color)?.name ?? '?'
-  }
-  if (analysing.value) return importedName(color) ?? '?'
-  if (offline.mode.value === 'dua-pemain') return colorName(color)
-  if (color === offline.humanColor.value) return t('player.you')
-  return `${host.value.name} (Stockfish ${offline.elo.value})`
-}
-
-/**
- * Nama di kartu akurasi: tanpa "(Putih)" — titik warna di kartu sudah
- * mengatakannya — dan tanpa Elo, supaya muat di setengah lebar panel.
- */
-function reviewName(color: Color): string {
-  if (vsComputer.value && color !== offline.humanColor.value) return host.value.name
-  return pgnName(color)
-}
-
-async function copyPgn(): Promise<void> {
-  const opening = openingName(gameRecord.value.fens)
-  const pgn = toPgn({
-    sans: gameRecord.value.sans,
-    result: pgnResult.value,
-    white: pgnName('w'),
-    black: pgnName('b'),
-    date: new Date(),
-    event: 'Chess with Mari',
-    extraTags: opening ? { Opening: opening } : {}
-  })
-  try {
-    await navigator.clipboard.writeText(pgn)
-    pgnFeedback.value = 'copied'
-  } catch {
-    // Clipboard ditolak (izin, konteks tidak aman, dsb.) — katakan terus terang.
-    pgnFeedback.value = 'failed'
-  }
-  if (pgnFeedbackTimer) clearTimeout(pgnFeedbackTimer)
-  pgnFeedbackTimer = setTimeout(() => (pgnFeedback.value = null), 2000)
-}
-
-watch(
-  analysisFen,
-  (fen) => {
-    if (fen) {
-      analysePosition(fen, (result) => {
-        evaluation.value = result
-        gameReview.remember(result)
-      })
-    } else {
-      stopAnalysis()
-      evaluation.value = null
-    }
-  },
-  { immediate: true }
-)
-
-onBeforeUnmount(stopAnalysis)
-
-/**
- * Evaluasi yang ditampilkan: hasil live bila sudah untuk posisi ini dan
- * setidaknya sedalam yang tersimpan; selain itu hasil tersimpan (dari ulasan
- * atau kunjungan sebelumnya), supaya menelusuri partai yang sudah diulas
- * langsung menampilkan angka tanpa menunggu mesin mulai dari kedalaman 1.
- */
-const shownEvaluation = computed<Evaluation | null>(() => {
-  const live = evaluation.value
-  const cached = gameReview.cachedEvaluation(analysedFen.value)
-  if (live && live.fen === analysedFen.value && (!cached || live.depth >= cached.depth)) return live
-  return cached ?? live
-})
-
-/**
- * Langkah terbaik di posisi SEBELUM langkah yang sedang tampil, bila langkah
- * itu diberi label ?!, ?, atau ??. Digambar di papan sesudah langkahnya —
- * sorotan langkah terakhir menunjukkan apa yang dimainkan, panahnya apa yang
- * seharusnya. Tidak ikut sakelar panah saran: pemain sendiri yang meminta ulasan.
- */
-const reviewBetterMove = computed<{ from: Square; to: Square } | null>(() => {
-  const ply = displayPly.value
-  const mark = ply > 0 ? reviewMarks.value[ply - 1] : null
-  if (!mark || mark === 'best' || mark === 'good') return null
-  return gameReview.scores.value[ply - 1]?.moves[0] ?? null
-})
-
-/**
- * Badge label ulasan di papan: langkah yang sedang tampil (ply `displayPly`),
- * ditempel di petak tujuannya — `lastMove` sudah mengikuti penelusuran, dan
- * untuk rokade itu petak raja. Kosong sebelum ulasan berjalan.
- */
-const boardMoveBadge = computed<{ square: Square; cls: MoveClass } | null>(() => {
-  const ply = displayPly.value
-  const cls = ply > 0 ? reviewMarks.value[ply - 1] : null
-  const to = lastMove.value?.to
-  return cls && to !== undefined ? { square: to, cls } : null
-})
-
-/** Kedalaman minimal sebelum panah saran ditampilkan — supaya tidak lompat-lompat sebelum mengendap. */
-const SUGGESTION_MIN_DEPTH = 6
-
-/**
- * Panah saran: beberapa langkah teratas menurut analiser (MultiPV) untuk posisi
- * yang tampil, terurut dari terbaik. `ChessBoard` menggambar yang pertama paling
- * tegas, sisanya makin redup.
- *
- * Live → hanya saat giliran pihak yang boleh digerakkan (`canPlay`). Menelusuri
- * riwayat → untuk posisi yang dilihat, siapa pun yang jalan (alat review).
- * Hasil analiser dibuang kalau `fen`-nya sudah tidak cocok (basi sesaat setelah
- * lawan menjawab) atau kedalamannya belum cukup.
- */
-const suggestionArrows = computed<{ from: Square; to: Square }[]>(() => {
-  // Ulasan berbicara lebih dulu: di langkah yang salah, satu-satunya panah
-  // adalah langkah yang seharusnya — pasangan visual kartu "Lebih baik: …".
-  if (reviewBetterMove.value) return [reviewBetterMove.value]
-  if (!suggestionEnabled.value) return []
-  if (isLive.value && canPlay.value === null && !analysing.value) return []
-  const result = shownEvaluation.value
-  if (!result || result.fen !== analysedFen.value || result.depth < SUGGESTION_MIN_DEPTH) return []
-  // Selama ulasan, papan dibuat setenang mungkin: satu panah saja, bukan tiga.
-  return gameReview.status.value === 'idle' ? result.moves : result.moves.slice(0, 1)
-})
 
 const premoveColor = computed<Color | null>(() =>
   isLive.value ? (isOnline.value ? online.premoveColor.value : offline.premoveColor.value) : null
@@ -516,9 +378,8 @@ function jumpView(ply: number): void {
 }
 
 /** PGN yang sudah sah diurai → partai impor di fase analisis, dilihat dari posisi terakhir. */
-function loadImportedGame(game: Extract<PgnParseResult, { ok: true }>): void {
-  importedGame.value = { tags: game.tags, result: game.result }
-  offline.importGame(game.moves)
+function loadImportedGame(game: ImportedPgn): void {
+  pgn.loadImported(game)
   viewPly.value = null
   clearBoardAnnotations()
 }
@@ -582,7 +443,7 @@ const statusText = computed(() => {
   // Didahulukan dari status papan: partai impor yang berakhir mat tetap
   // "partai impor", dan papannya tidak perlu diredupkan seperti partai usai.
   if (offline.phase.value === 'analysis') {
-    return t('status.analysis', { result: importedGame.value?.result ?? '*' })
+    return t('status.analysis', { result: pgn.result.value })
   }
 
   const state = offline.status.value
@@ -659,12 +520,6 @@ const bottomColor = computed<Color>(() => orientation.value)
 const faceFor = (color: Color): Opponent | null =>
   vsComputer.value && color !== offline.humanColor.value ? host.value : null
 
-/** Nama pemain dari tag PGN partai impor; null bila kosong atau "?" (tanda tidak diketahui di PGN). */
-function importedName(color: Color): string | null {
-  const name = importedGame.value?.tags[color === 'w' ? 'White' : 'Black']?.trim()
-  return name && name !== '?' ? name : null
-}
-
 const topFace = computed(() => faceFor(topColor.value))
 const bottomFace = computed(() => faceFor(bottomColor.value))
 
@@ -680,7 +535,7 @@ function playerLabel(color: Color): string {
     return `${player.name}${you}${gone}`
   }
   if (analysing.value) {
-    const name = importedName(color)
+    const name = pgn.importedName(color)
     return name ? `${name} (${colorName(color)})` : colorName(color)
   }
   if (offline.mode.value === 'dua-pemain') return colorName(color)
@@ -958,9 +813,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             :active-ply="displayPly"
             :marks="reviewMarks"
             :opening="openingLabel"
-            :pgn-feedback="pgnFeedback"
+            :pgn-feedback="pgn.feedback.value"
             @jump="jumpView"
-            @copy-pgn="copyPgn"
+            @copy-pgn="pgn.copy"
           />
         </div>
       </div>
@@ -991,16 +846,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :status="gameReview.status.value"
           :progress="gameReview.progress.value"
           :review="gameReview.review.value"
-          :labels="{ w: reviewName('w'), b: reviewName('b') }"
+          :labels="{ w: pgn.reviewName('w'), b: pgn.reviewName('b') }"
           :scores="gameReview.scores.value"
           :marks="reviewMarks"
           :sans="reviewSans"
           :active-ply="displayPly"
-          :pgn-feedback="pgnFeedback"
+          :pgn-feedback="pgn.feedback.value"
           @start="gameReview.start"
           @cancel="gameReview.cancel"
           @jump="jumpView"
-          @copy-pgn="copyPgn"
+          @copy-pgn="pgn.copy"
         />
 
         <template v-if="isOnline">
